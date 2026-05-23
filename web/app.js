@@ -143,11 +143,60 @@ async function api(path, options = {}) {
    ────────────────────────────────────────────────────────────────── */
 async function boot() {
   applyColorScheme(state.colorScheme);
+  setupSidebar();
   setupDrawer();
   setupGraph();
   bindActions();
   setupCameraWidget();
   await loadAll();
+}
+
+function setupSidebar() {
+  const savedWidth = Number(localStorage.getItem("tracer.sidebarWidth") || 300);
+  const savedCollapsed = localStorage.getItem("tracer.sidebarCollapsed") === "true";
+  setSidebarWidth(savedWidth);
+  document.body.classList.toggle("rail-collapsed", savedCollapsed);
+
+  const toggle = $("sidebar-toggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const collapsed = !document.body.classList.contains("rail-collapsed");
+      document.body.classList.toggle("rail-collapsed", collapsed);
+      localStorage.setItem("tracer.sidebarCollapsed", String(collapsed));
+      resizeGraph();
+    });
+  }
+
+  const resizer = $("sidebar-resizer");
+  if (!resizer) return;
+  let startX = 0;
+  let startWidth = savedWidth;
+  resizer.addEventListener("pointerdown", (event) => {
+    startX = event.clientX;
+    startWidth = sidebarWidth();
+    document.body.classList.add("rail-resizing");
+    resizer.setPointerCapture(event.pointerId);
+  });
+  resizer.addEventListener("pointermove", (event) => {
+    if (!document.body.classList.contains("rail-resizing")) return;
+    setSidebarWidth(startWidth + event.clientX - startX);
+    resizeGraph();
+  });
+  resizer.addEventListener("pointerup", (event) => {
+    document.body.classList.remove("rail-resizing");
+    resizer.releasePointerCapture(event.pointerId);
+    localStorage.setItem("tracer.sidebarWidth", String(sidebarWidth()));
+  });
+}
+
+function sidebarWidth() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--rail-width");
+  return Number.parseFloat(raw) || 300;
+}
+
+function setSidebarWidth(width) {
+  const nextWidth = Math.max(220, Math.min(Number(width) || 300, Math.min(620, window.innerWidth * 0.55)));
+  document.documentElement.style.setProperty("--rail-width", `${Math.round(nextWidth)}px`);
 }
 
 function currentScheme() {

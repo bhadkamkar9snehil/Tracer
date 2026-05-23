@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle filters">Filters</button>
     <div id="app-shell">
       <aside class="left-rail">
         <header class="brand-block">
@@ -16,7 +17,7 @@
           <div id="connection-state" class="state-pill">BOOTING</div>
         </header>
 
-        <section class="rail-section">
+        <section class="rail-section collapsed">
           <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Run Selector <span class="arrow">▼</span></div>
           <div class="rail-body">
             <dl class="kv">
@@ -39,7 +40,7 @@
           </div>
         </section>
 
-        <section class="rail-section">
+        <section class="rail-section collapsed">
           <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Time Window <span class="arrow">▼</span></div>
           <div class="rail-body">
             <dl class="kv"><dt>Range</dt><dd id="metric-range">--</dd></dl>
@@ -51,7 +52,7 @@
           </div>
         </section>
 
-        <section class="rail-section">
+        <section class="rail-section collapsed">
           <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Trace Filters <span class="arrow">▼</span></div>
           <div class="rail-body">
             <label>SP Name<select id="filter-name"><option value="">All procedures</option></select></label>
@@ -78,6 +79,7 @@
           </div>
         </section>
       </aside>
+      <div id="sidebar-resizer" class="sidebar-resizer" title="Drag to resize filters"></div>
 
       <main class="workspace">
         <section class="top-strip">

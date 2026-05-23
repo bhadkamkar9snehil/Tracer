@@ -14,6 +14,7 @@
   --black: #0d0e0f;
   --mono: "Consolas", "Courier New", monospace;
   --sans: "Bahnschrift", "Aptos", "Segoe UI", sans-serif;
+  --rail-width: 300px;
 }
 
 body[data-scheme="ocean"] {
@@ -135,13 +136,18 @@ label {
 
 #app-shell {
   display: grid;
-  grid-template-columns: 300px minmax(520px, 1fr);
+  grid-template-columns: var(--rail-width) minmax(520px, 1fr);
   grid-template-rows: 100vh;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+  transition: grid-template-columns 0.18s ease;
+}
+
+body.rail-collapsed #app-shell {
+  grid-template-columns: 0 minmax(520px, 1fr);
 }
 
 /* Allow text selection in specific areas */
@@ -154,6 +160,52 @@ input, select, textarea, pre, code, .kv dd, .drawer-body {
   overflow: auto;
   border-right: 1px solid var(--line-dim);
   background: #1e2123;
+  min-width: 0;
+  transition: opacity 0.18s ease;
+}
+
+body.rail-collapsed .left-rail {
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sidebar-toggle {
+  position: fixed;
+  top: 12px;
+  left: max(8px, calc(var(--rail-width) - 86px));
+  z-index: 30;
+  min-width: 74px;
+  min-height: 30px;
+  background: #111314;
+  border-color: var(--line);
+  color: var(--hard);
+  font-family: var(--mono);
+}
+
+body.rail-collapsed .sidebar-toggle {
+  left: 8px;
+  border-color: var(--focus);
+}
+
+.sidebar-resizer {
+  position: fixed;
+  top: 0;
+  left: calc(var(--rail-width) - 3px);
+  z-index: 25;
+  width: 6px;
+  height: 100vh;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.sidebar-resizer:hover,
+body.rail-resizing .sidebar-resizer {
+  background: rgba(76, 159, 216, 0.28);
+}
+
+body.rail-collapsed .sidebar-resizer {
+  display: none;
 }
 
 /* Workspace: graph gets most space; bottom strip is collapsible */
@@ -842,7 +894,11 @@ pre {
 
 @media (max-width: 1100px) {
   #app-shell {
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: var(--rail-width) minmax(520px, 1fr);
+  }
+
+  body.rail-collapsed #app-shell {
+    grid-template-columns: 0 minmax(520px, 1fr);
   }
 
   .top-strip {
