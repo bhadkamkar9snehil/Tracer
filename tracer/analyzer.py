@@ -1,10 +1,68 @@
-from __future__ import annotations
-
 """
 Tracer analyzer module
 ======================
 
-CODE INDEX
+Current analytics capabilities
+------------------------------
+- Cache diagnostics: summarizes row counts, procedure/type coverage, cache
+  watermark status, top trace names, and health signals used by the UI.
+- Delta engine: compares expected procedure paths with actual trace evidence,
+  detects missing and unexpected steps, and returns match quality without
+  inventing a perfect score when expected data is unavailable.
+- Graph model: builds workflow, procedure, step, table, error, and anonymous
+  nodes with prioritized semantic edges for calls, reads, writes, updates, and
+  static expected-step relationships.
+- Playback: serves filtered or selected-run event timelines with expected-path
+  context, missing expected steps, unexpected actual rows, and scoped deltas.
+- Run reconstruction: splits raw trace rows into actual execution runs, stores
+  run events, computes run-level deltas, and exposes run list/detail payloads.
+- Transitions: extracts observed procedure/type transitions and trace sequence
+  movement for diagnostics and graph traversal.
+- Parameter intelligence: extracts execution parameters from trace evidence and
+  preserves them on playback/run payloads for inspection.
+- Static procedure intelligence: reads parsed stored-procedure metadata, log
+  references, table touches, calls, and expected steps when available.
+- Damage diagnosis: emits anomaly records with severity, primary evidence,
+  next actions, and graph focus nodes for the frontend diagnostic drawer.
+
+Known limitations and enhancement opportunities
+-----------------------------------------------
+1. Add duration statistics per run, procedure, step, and transition, including
+   p50/p90/p99 latency.
+2. Track error rates by procedure, type, step, run status, and time window.
+3. Add throughput metrics such as events per minute, runs per hour, and cache
+   ingestion velocity.
+4. Detect temporal patterns including spikes, recurring failures, idle gaps,
+   and after-hours behavior.
+5. Add graph analytics such as centrality, fan-in/fan-out, hot tables,
+   strongly connected components, and longest dependency paths.
+6. Improve conformance scoring with weighted penalties, fuzzy step matching,
+   duplicate-step handling, and confidence intervals.
+7. Persist per-step duration deltas once reliable start/end semantics are
+   available in the trace stream.
+8. Add baseline comparison across releases or selected historical windows.
+9. Separate expected-path absence from true conformance failures in every API
+   and UI payload.
+10. Normalize parameter names and types so parameter drift can be compared
+    across stored procedures and runs.
+11. Add anomaly explanations for repeated retries, skipped writes, orphan table
+    access, and procedure calls without matching static metadata.
+12. Introduce incremental analysis checkpoints so sync does not recompute every
+    expensive aggregate after small cache updates.
+13. Add data quality diagnostics for malformed timestamps, missing sequence
+    numbers, duplicate trace rows, and incomplete run boundaries.
+14. Add run clustering by parameter sets, execution shape, status, and delta
+    profile.
+15. Add table impact scoring that combines write frequency, error proximity,
+    and downstream procedure dependency.
+16. Add SLA/SLO rules that can flag slow runs, missing required steps, and
+    forbidden table updates.
+17. Add export-ready analytics payloads for CSV/JSON reports and scheduled
+    regression checks.
+18. Add test fixtures that cover expected-path unavailable, sr_no=0,
+    sub_seq_no=0, duplicate steps, and long selected runs.
+
+Code index
 ----------
 1. Module constants and small type aliases
 2. SQLite / JSON / timestamp helper functions
@@ -44,6 +102,8 @@ Design goals
   without milliseconds, absent optional tables, absent optional columns, and long
   selected runs.
 """
+
+from __future__ import annotations
 
 import hashlib
 import json

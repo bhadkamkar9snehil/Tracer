@@ -301,10 +301,10 @@ def cached_events(conn: sqlite3.Connection, params: dict[str, Any]) -> list[dict
     if params.get("end"):
         clauses.append("entry_datetime <= ?")
         values.append(params["end"])
-    if params.get("sr_no"):
+    if params.get("sr_no") not in (None, ""):
         clauses.append("sr_no = ?")
         values.append(int(params["sr_no"]))
-    if params.get("sub_seq_no"):
+    if params.get("sub_seq_no") not in (None, ""):
         clauses.append("sub_seq_no = ?")
         values.append(int(params["sub_seq_no"]))
     if params.get("step"):

@@ -670,9 +670,14 @@ function bindActions() {
         tlEvents.scrollTop = tlEvents.scrollHeight;
       }
       
-      const stepOrdinal = event.sr_no ? event.sr_no : state.playback.currentIndex + 1;
-      const stepId = `${event.name}::expected::${stepOrdinal}`;
-      state.selected = { id: stepId };
+      // Match the playback event to an actual graph node by name+sr_no or step text
+      const matchedNode = state.graph.nodes.find(n =>
+        n.parent === event.name && n.kind === "step" && (
+          (event.sr_no != null && Number(n.sr_no) === Number(event.sr_no)) ||
+          (event.step && n.label && (String(n.label).toLowerCase().includes(String(event.step).toLowerCase()) || String(event.step).toLowerCase().includes(String(n.label).toLowerCase())))
+        )
+      );
+      state.selected = matchedNode ? { id: matchedNode.id } : null;
       renderGraph();
       
     }, 500);
@@ -955,17 +960,24 @@ function buildExpectedPathFromGraph(name) {
 
   const steps = nodes
     .filter((node) => node.parent === rootId || node.kind === "step")
-    .sort((a, b) => Number(a.sub_seq_no || a.sr_no || 0) - Number(b.sub_seq_no || b.sr_no || 0))
+    .sort((a, b) => (Number(a.sr_no || 0) - Number(b.sr_no || 0)) || (Number(a.sub_seq_no || 0) - Number(b.sub_seq_no || 0)))
     .map((node, index) => ({
+      node_id: node.id,
       ordinal: index + 1,
       sr_no: node.sr_no,
       sub_seq_no: node.sub_seq_no,
       step: node.label,
     }));
+  const ordinalById = new Map(steps.map((step) => [step.node_id, step.ordinal]));
+  for (const node of nodes) {
+    if (node.kind === "step" && ordinalById.has(node.id)) {
+      node.ordinal = ordinalById.get(node.id);
+    }
+  }
 
   return {
     name: rootId,
-    steps,
+    steps: steps.map(({ node_id, ...step }) => step),
     graph: { nodes, edges: dedupedEdges },
   };
 }
@@ -973,6 +985,41 @@ function buildExpectedPathFromGraph(name) {
 /* ──────────────────────────────────────────────────────────────────
    THREE.JS SETUP
    ────────────────────────────────────────────────────────────────── */
+/*
+3D model improvement backlog
+----------------------------
+Performance:
+- Replace per-node mesh and label creation with instanced rendering where shape
+  families allow it.
+- Cache canvas label textures by text/style and reuse sprites across redraws.
+- Reduce hover work by keeping a spatial index or raycast candidate set for
+  visible nodes only.
+- Add level-of-detail handling for dense graphs and skip fine labels at distance.
+- Apply frustum culling and visible-edge pruning before building render objects.
+
+Visual quality:
+- Add tuned shadows, ambient occlusion, and optional bloom/glow for selected,
+  damaged, and playback-active nodes.
+- Draw directional edge arrowheads and edge labels for call/read/write/update
+  semantics.
+- Smooth camera/view transitions between workflow, steps, damage, and expected
+  layouts instead of snapping.
+
+Interaction:
+- Support constrained node dragging for manual investigation layouts.
+- Add edge hover/selection details, graph search, a minimap, and playback speed
+  controls.
+
+Layout:
+- Guard expected-step stacking bounds for long paths and compress spacing when
+  the path exceeds the visible depth.
+- Apply delta coloring consistently across all view modes, not only expected
+  path nodes.
+
+Data visualization:
+- Add heatmap overlays for trace volume/error intensity, a timeline scrubber,
+  parameter/value visualization, and main-graph delta overlays.
+*/
 /* Memory Leak Prevention */
 function clearGroup(group) {
   while (group.children.length > 0) {
@@ -1417,7 +1464,7 @@ function computeNodePositions(nodes, lanes) {
       
       let stepOrdinal = 1;
       if (node.kind === "step") {
-        stepOrdinal = parseInt(node.id.split("::expected::")[1]) || 1;
+        stepOrdinal = node.ordinal || parseInt(node.id.split("::expected::")[1]) || parseInt(node.id.split("::step::")[1]) || Number(node.sr_no) || 1;
         // Central runway: X = 0, Y = 0, extending along Z (depth)
         positions.set(node.id, new THREE.Vector3(0, 0, -stepOrdinal * 80));
         return;
@@ -1427,7 +1474,8 @@ function computeNodePositions(nodes, lanes) {
       const parentEdge = state.expectedPath.graph.edges.find(e => e.target === node.id || e.source === node.id);
       if (parentEdge) {
         const stepId = parentEdge.source === node.id ? parentEdge.target : parentEdge.source;
-        stepOrdinal = parseInt(stepId.split("::expected::")[1]) || 1;
+        const stepNode = nodes.find(n => n.id === stepId);
+        stepOrdinal = (stepNode && stepNode.ordinal) || parseInt(stepId.split("::expected::")[1]) || parseInt(stepId.split("::step::")[1]) || 1;
       }
       
       const z = -stepOrdinal * 80;
@@ -1913,8 +1961,13 @@ function laneKey(node) {
 }
 
 function laneMap(nodes) {
-  /* Phase 1: use fixed lane order so lanes don't shift */
-  return new Map(LANE_ORDER.map((lane, index) => [lane, index]));
+  /* Phase 1: use fixed lane order, but only include lanes that have at least one visible node */
+  if (!nodes || nodes.length === 0) {
+    return new Map(LANE_ORDER.map((lane, index) => [lane, index]));
+  }
+  const populatedLanes = new Set(nodes.map(n => laneKey(n)));
+  const filtered = LANE_ORDER.filter(lane => populatedLanes.has(lane));
+  return new Map(filtered.map((lane, index) => [lane, index]));
 }
 
 function depthFor(node) {
@@ -2630,26 +2683,6 @@ function renderFilterStatus() {
   const hiddenForOverlay = state.graph.nodes.length - state.visibleNodeCount;
   if (hiddenForOverlay > 0) overlayParts.push(`${hiddenForOverlay} hidden`);
   info.textContent = overlayParts.join(" | ");
-  return;
-
-  title.textContent = focusName
-    ? `${scopeLabel} — ${focusName}`
-    : scopeLabel;
-
-  const parts = [
-    `${state.visibleNodeCount} nodes`,
-    `${state.visibleEdgeCount} edges`,
-    state.filters.source === "sql" ? "LIVE SQL" : "Cache",
-  ];
-  if (state.wrongMode) parts.push("DAMAGE FILTER");
-  if (state.filters.name) parts.push(`SP=${cleanObjectName(state.filters.name)}`);
-  if (state.filters.type) parts.push(`TYPE=${state.filters.type}`);
-  if (state.filters.start || state.filters.end) parts.push("TIME WINDOW");
-
-  const hiddenCount = state.graph.nodes.length - state.visibleNodeCount;
-  if (hiddenCount > 0) parts.push(`${hiddenCount} hidden`);
-
-  info.textContent = parts.join(" | ");
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -2827,7 +2860,10 @@ async function openRuntimeModal() {
     const payload = await api("/api/runtime/logs");
     state.runtimeStartedAt = payload.started_at || state.runtimeStartedAt;
     const serverRows = payload.logs.map((row) => ({ ...row, layer: "python" }));
-    state.runtimeLogs = [...serverRows.reverse(), ...state.runtimeLogs].slice(0, 200);
+    // Merge and sort by timestamp so server and browser logs are interleaved chronologically
+    const merged = [...serverRows, ...state.runtimeLogs];
+    merged.sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
+    state.runtimeLogs = merged.slice(0, 200);
   } catch {
     // Browser-side runtime logs are still useful if server log fetch fails.
   }

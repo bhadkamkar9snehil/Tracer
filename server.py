@@ -170,6 +170,7 @@ def sync_trace(conn, client: SqlClient, limit: int, mode: str = "incremental") -
         warnings.append(f"Stored-procedure metadata refresh skipped: missing {SP_DOC_PATH.name}")
 
     result = analyzer.analyze(conn)
+    analyzer.reconstruct_and_save_runs(conn)
     return {
         "ok": True,
         "mode": mode,
@@ -257,7 +258,11 @@ def sanitize_runtime_error(message: str, client: SqlClient) -> str:
 
 def main() -> None:
     mimetypes.add_type("text/javascript", ".js")
-    cache.init_db(cache.connect())
+    init_conn = cache.connect()
+    try:
+        cache.init_db(init_conn)
+    finally:
+        init_conn.close()
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), TracerServer)
     print(f"Tracer running at http://127.0.0.1:{PORT}")
     httpd.serve_forever()
