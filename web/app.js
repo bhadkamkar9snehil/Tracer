@@ -67,6 +67,8 @@ let selectedMesh = null;
 let nodePositions = new Map();
 let cameraTarget = new THREE.Vector3(0, 0, -120);
 let cameraSpherical = { radius: 900, theta: 0, phi: 1.1 };
+const BASE_CAMERA_FOV = 46;
+let referenceGraphHeight = 0;
 let dragState = null;
 
 /* ──────────────────────────────────────────────────────────────────
@@ -1066,7 +1068,7 @@ function setupGraph() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x151718);
-  camera = new THREE.PerspectiveCamera(46, 1, 1, 5000);
+  camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, 1, 1, 5000);
   updateCamera();
   raycaster = new THREE.Raycaster();
   pointer = new THREE.Vector2();
@@ -2512,8 +2514,15 @@ function resizeGraph() {
   const frame = document.querySelector(".graph-frame");
   const w = frame.clientWidth;
   const h = frame.clientHeight;
+  if (!w || !h) return;
+  if (!referenceGraphHeight || h > referenceGraphHeight) {
+    referenceGraphHeight = h;
+  }
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
+  const heightRatio = clamp(h / referenceGraphHeight, 0.35, 1);
+  const baseFov = THREE.MathUtils.degToRad(BASE_CAMERA_FOV);
+  camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(baseFov / 2) * heightRatio));
   camera.updateProjectionMatrix();
 }
 
