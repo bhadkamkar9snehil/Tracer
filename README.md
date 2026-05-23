@@ -1,39 +1,124 @@
 # Tracer
 
-Welcome to the **Tracer** repository! This project is developed and maintained by [bhadkamkar9snehil](https://github.com/bhadkamkar9snehil).
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-## About
-Tracer is designed to help with [provide a brief description of the project's purpose or functionality here].
+**Tracer** is an early-stage 3D visualiser for logs.
 
-## Getting Started
+The goal of Tracer is to make log exploration more spatial and interactive. Instead of scanning log lines one by one, Tracer is intended to help engineers load structured events, view them across time, inspect relationships between events, and identify patterns, anomalies, or broken flows in a 3D interface.
 
-### Prerequisites
-- [List any prerequisites, e.g., Python, libraries, tools.]
+## Status
 
-### Installation
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/bhadkamkar9snehil/Tracer.git
-   ```
-2. Navigate to the project directory:
-   ```bash
-   cd Tracer
-   ```
-3. [Add installation or setup steps here.]
+Tracer is currently in its initial project setup phase. This README describes the intended direction of the project and will be updated as the implementation, setup instructions, and runtime commands are added.
 
-### Usage
-[Provide instructions on how to use the project.]
+## Why Tracer?
+
+Traditional log viewers are usually linear: search, filter, scroll, repeat. That works for simple debugging, but it becomes harder when logs include many services, sessions, traces, retries, or overlapping event streams.
+
+Tracer is intended to help with:
+
+- spotting bursts, gaps, clusters, and outliers in event streams;
+- comparing logs across runs, requests, sessions, or services;
+- visualising temporal relationships between related events;
+- inspecting complex traces without losing the wider context;
+- turning raw logs into an explorable debugging surface.
+
+## Intended workflow
+
+A typical Tracer workflow will look like this:
+
+1. Export or collect logs from an application, service, script, or system.
+2. Convert the logs into a structured event format.
+3. Load the structured events into Tracer.
+4. Explore the log data in a 3D scene using time, source, severity, and relationships as visual dimensions.
+5. Select individual events to inspect their raw payload and metadata.
+
+## Planned capabilities
+
+Tracer is expected to grow around the following capabilities:
+
+- structured log import, starting with formats such as JSON, NDJSON, or CSV;
+- a timeline-based 3D visualisation of events;
+- filtering by timestamp, severity, source, component, request ID, or trace ID;
+- visual encoding for severity, category, duration, and relationship type;
+- event selection with raw log payload inspection;
+- support for sample datasets and reproducible demo scenarios;
+- exportable or shareable views for debugging notes and investigations.
+
+## Example event shape
+
+Tracer will work best with structured logs. A minimal event could look like this:
+
+```json
+{
+  "timestamp": "2026-05-23T10:30:00Z",
+  "level": "info",
+  "source": "api-gateway",
+  "message": "Request completed",
+  "trace_id": "trace-123",
+  "span_id": "span-456",
+  "duration_ms": 42,
+  "attributes": {
+    "method": "GET",
+    "path": "/health",
+    "status_code": 200
+  }
+}
+```
+
+This schema is illustrative and may change as the project develops.
+
+## Repository setup
+
+Clone the repository:
+
+```bash
+git clone https://github.com/bhadkamkar9snehil/Tracer.git
+cd Tracer
+```
+
+The application source code has not been documented in this README yet. Once the implementation is added, this section should include:
+
+- required runtime versions;
+- dependency installation steps;
+- local development commands;
+- build commands;
+- test commands;
+- sample input files and demo instructions.
+
+## Development notes
+
+When implementation begins, keep the README aligned with the actual project by documenting:
+
+- the supported log formats;
+- the expected event schema;
+- how to run the app locally;
+- how to load demo data;
+- any renderer, UI, backend, or storage assumptions;
+- known limitations and performance expectations.
+
+## Roadmap
+
+Initial project milestones:
+
+- [ ] Define the MVP structured event schema.
+- [ ] Add sample log datasets.
+- [ ] Implement the first log importer.
+- [ ] Build the initial 3D event scene.
+- [ ] Add basic filtering and event inspection.
+- [ ] Document local setup and development commands.
+- [ ] Add screenshots or a demo GIF once the UI exists.
 
 ## Contributing
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a new branch.
-3. Make your changes.
-4. Submit a pull request.
+
+Contributions are welcome once the project structure is in place.
+
+For future contributions:
+
+1. Open an issue describing the bug, improvement, or feature proposal.
+2. Keep pull requests focused and small enough to review.
+3. Include sample logs or screenshots when changing visual behaviour.
+4. Update documentation when changing setup, input formats, or user-facing behaviour.
 
 ## License
-[Indicate license information here.]
 
----
-
-Feel free to check out the [Wiki](https://github.com/bhadkamkar9snehil/Tracer/wiki) for detailed documentation!
+Tracer is licensed under the [Apache License 2.0](LICENSE).
