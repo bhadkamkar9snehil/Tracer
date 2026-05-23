@@ -16,6 +16,33 @@
   --sans: "Bahnschrift", "Aptos", "Segoe UI", sans-serif;
 }
 
+body[data-scheme="ocean"] {
+  --bg: #101719;
+  --panel: #1d2a2e;
+  --panel-2: #263b40;
+  --line: #45666d;
+  --line-dim: #263f45;
+  --focus: #38bdf8;
+}
+
+body[data-scheme="graphite"] {
+  --bg: #151719;
+  --panel: #24272b;
+  --panel-2: #343941;
+  --line: #5b626d;
+  --line-dim: #3b4149;
+  --focus: #f59e0b;
+}
+
+body[data-scheme="contrast"] {
+  --bg: #050608;
+  --panel: #11151a;
+  --panel-2: #202833;
+  --line: #747d8a;
+  --line-dim: #3f4754;
+  --focus: #00e5ff;
+}
+
 * {
   box-sizing: border-box;
 }

@@ -19,6 +19,7 @@ const state = {
   wrongMode: false,
   /* Phase 1 — graph readability additions */
   graphScope: "all",
+  colorScheme: localStorage.getItem("tracer.colorScheme") || "default",
   focusedNodeId: "",
   hoveredNodeId: "",
   /* Phase 2 — drawer and diagnosis */
@@ -55,6 +56,36 @@ const truncate = (value, max = 34) => {
 
 /* Fixed lane order — never shifts when filters change */
 const LANE_ORDER = ["PROCEDURE", "WORKFLOW", "SAP", "API ERROR", "INTERNAL STEP", "TABLE", "UNKNOWN"];
+const COLOR_SCHEMES = {
+  default: {
+    scene: 0x151718, gridMajor: 0x3f464a, gridMinor: 0x25292b,
+    focus: 0x4c9fd8, selected: 0xf2f2ef, error: 0xc9443c, warning: 0xd8a13a,
+    workflow: 0xe6e3dc, step: 0x8d9698, table: 0x657073, procedure: 0x9aa1a3,
+    unknown: 0xd8a13a, readEdge: 0x555b5f, writeEdge: 0xd8a13a,
+    callEdge: 0xe6e3dc, staticEdge: 0x3f464a,
+  },
+  ocean: {
+    scene: 0x101719, gridMajor: 0x2f6570, gridMinor: 0x1e363b,
+    focus: 0x38bdf8, selected: 0xecfeff, error: 0xfb7185, warning: 0xfacc15,
+    workflow: 0x67e8f9, step: 0x94a3b8, table: 0x2dd4bf, procedure: 0xbae6fd,
+    unknown: 0xfbbf24, readEdge: 0x38bdf8, writeEdge: 0xfacc15,
+    callEdge: 0xa5f3fc, staticEdge: 0x155e75,
+  },
+  graphite: {
+    scene: 0x111315, gridMajor: 0x4b5563, gridMinor: 0x262b30,
+    focus: 0xf59e0b, selected: 0xf8fafc, error: 0xef4444, warning: 0xf97316,
+    workflow: 0xd1d5db, step: 0x9ca3af, table: 0x6b7280, procedure: 0xe5e7eb,
+    unknown: 0xfbbf24, readEdge: 0x64748b, writeEdge: 0xf59e0b,
+    callEdge: 0xe5e7eb, staticEdge: 0x374151,
+  },
+  contrast: {
+    scene: 0x050608, gridMajor: 0x68707a, gridMinor: 0x23272f,
+    focus: 0x00e5ff, selected: 0xffffff, error: 0xff3b30, warning: 0xffd60a,
+    workflow: 0xffffff, step: 0xb7c1cb, table: 0x7dd3fc, procedure: 0xf8fafc,
+    unknown: 0xffd60a, readEdge: 0x60a5fa, writeEdge: 0xffd60a,
+    callEdge: 0xffffff, staticEdge: 0x475569,
+  },
+};
 
 let renderer;
 let scene;
@@ -111,11 +142,23 @@ async function api(path, options = {}) {
    BOOT
    ────────────────────────────────────────────────────────────────── */
 async function boot() {
+  applyColorScheme(state.colorScheme);
   setupDrawer();
   setupGraph();
   bindActions();
   setupCameraWidget();
   await loadAll();
+}
+
+function currentScheme() {
+  return COLOR_SCHEMES[state.colorScheme] || COLOR_SCHEMES.default;
+}
+
+function applyColorScheme(name) {
+  state.colorScheme = COLOR_SCHEMES[name] ? name : "default";
+  localStorage.setItem("tracer.colorScheme", state.colorScheme);
+  document.body.dataset.scheme = state.colorScheme;
+  if (scene) scene.background = new THREE.Color(currentScheme().scene);
 }
 
 async function loadAll() {
@@ -593,6 +636,15 @@ function bindActions() {
     renderGraph();
   });
 
+  const schemeSelect = $("color-scheme");
+  if (schemeSelect) {
+    schemeSelect.value = state.colorScheme;
+    schemeSelect.addEventListener("change", () => {
+      applyColorScheme(schemeSelect.value);
+      renderGraph();
+    });
+  }
+
   /* Phase 1: Graph scope selector */
   $("graph-scope").addEventListener("change", () => {
     state.graphScope = $("graph-scope").value;
@@ -1069,7 +1121,7 @@ function setupGraph() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   maxTextureAnisotropy = renderer.capabilities.getMaxAnisotropy();
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x151718);
+  scene.background = new THREE.Color(currentScheme().scene);
   camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, 1, 1, 5000);
   updateCamera();
   raycaster = new THREE.Raycaster();
@@ -1237,7 +1289,8 @@ function renderGraph() {
   // Add GridHelper dynamically matching the node bounds
   const gridSize = Math.max(3000, bandDepth);
   const gridDivisions = Math.round(gridSize / 50);
-  const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x3f464a, 0x25292b);
+  const scheme = currentScheme();
+  const grid = new THREE.GridHelper(gridSize, gridDivisions, scheme.gridMajor, scheme.gridMinor);
   grid.position.set(0, -160, centerZ);
   graphGroup.add(grid);
 
@@ -1985,23 +2038,24 @@ function depthFor(node) {
    NODE COLORS & MESH
    ────────────────────────────────────────────────────────────────── */
 function colorFor(node) {
+  const scheme = currentScheme();
   if (state.viewMode === "expected" && state.activeRun && state.activeRun.delta && node.kind === "step") {
     const ordinal = parseInt(node.id.split("::expected::")[1]);
     const isMissing = state.activeRun.delta.details?.missing?.some(m => m.ordinal === ordinal);
-    if (isMissing) return 0xc9443c;
+    if (isMissing) return scheme.error;
     return 0x4aa252; // Green for present
   }
 
-  if (state.selected?.id === node.id) return 0xf2f2ef;
-  if (node.id === state.focusedNodeId) return 0x4c9fd8;
+  if (state.selected?.id === node.id) return scheme.selected;
+  if (node.id === state.focusedNodeId) return scheme.focus;
   const selectedName = state.filters.name;
-  if (selectedName && (node.id === selectedName || node.parent === selectedName)) return 0x4c9fd8;
-  if (node.kind === "error") return 0xc9443c;
-  if (node.kind === "anonymous" || node.kind === "unknown") return 0xd8a13a;
-  if (node.kind === "workflow") return 0xe6e3dc;
-  if (node.kind === "step") return 0x8d9698;
-  if (node.kind && node.kind.startsWith("table")) return 0x657073;
-  return 0x9aa1a3;
+  if (selectedName && (node.id === selectedName || node.parent === selectedName)) return scheme.focus;
+  if (node.kind === "error") return scheme.error;
+  if (node.kind === "anonymous" || node.kind === "unknown") return scheme.unknown;
+  if (node.kind === "workflow") return scheme.workflow;
+  if (node.kind === "step") return scheme.step;
+  if (node.kind && node.kind.startsWith("table")) return scheme.table;
+  return scheme.procedure;
 }
 
 function nodeMesh(node, volume, selectNeighbours) {
@@ -2105,6 +2159,7 @@ function applySelectedVisual(mesh) {
 function edgeLine(a, b, edge, selectNeighbours) {
   const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
   const priority = edgePriority(edge);
+  const scheme = currentScheme();
   let color, opacity;
 
   const selectedId = state.selected?.id;
@@ -2115,22 +2170,22 @@ function edgeLine(a, b, edge, selectNeighbours) {
   );
 
   if (edge.kind === "writes" || edge.kind === "updates") {
-    color = isConnected ? 0xffcc00 : 0xd8a13a;
+    color = isConnected ? scheme.warning : scheme.writeEdge;
     opacity = isConnected ? 1.0 : 0.75;
   } else if (edge.kind === "calls") {
-    color = isConnected ? 0xffffff : 0xe6e3dc;
+    color = isConnected ? scheme.selected : scheme.callEdge;
     opacity = isConnected ? 1.0 : 0.65;
   } else if (edge.kind === "reads") {
-    color = isConnected ? 0x00d2ff : 0x555b5f;
+    color = isConnected ? scheme.focus : scheme.readEdge;
     opacity = isConnected ? 1.0 : 0.35;
   } else if (edge.kind === "static_step") {
-    color = isConnected ? 0x88ff88 : 0x3f464a;
+    color = isConnected ? 0x88ff88 : scheme.staticEdge;
     opacity = isConnected ? 1.0 : 0.25;
   } else if (edge.kind === "error") {
-    color = isConnected ? 0xff3b30 : 0xc9443c;
+    color = scheme.error;
     opacity = isConnected ? 1.0 : 0.8;
   } else {
-    color = isConnected ? 0xffffff : 0x555b5f;
+    color = isConnected ? scheme.selected : scheme.readEdge;
     opacity = isConnected ? 1.0 : 0.5;
   }
 
