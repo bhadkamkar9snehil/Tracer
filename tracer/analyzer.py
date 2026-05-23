@@ -117,6 +117,30 @@ def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) 
     return column_name in _table_columns(conn, table_name)
 
 
+def _column_allows_null(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    """Return whether a SQLite table column permits NULL values."""
+    if not _table_exists(conn, table_name):
+        return True
+    for row in conn.execute(f"PRAGMA table_info({table_name})"):
+        if row["name"] == column_name:
+            return not bool(row["notnull"])
+    return True
+
+
+def _storage_score_for_run_delta(conn: sqlite3.Connection, score: float | None) -> float | None:
+    """Adapt logical delta scores to the current run_deltas.score schema."""
+    if score is not None:
+        return score
+    return None if _column_allows_null(conn, "run_deltas", "score") else -1.0
+
+
+def _actual_runs_count(conn: sqlite3.Connection) -> int:
+    if not _table_exists(conn, "actual_runs"):
+        return 0
+    row = conn.execute("SELECT COUNT(*) AS c FROM actual_runs").fetchone()
+    return _safe_int(row["c"] if row else 0)
+
+
 def _safe_json_loads(value: Any, fallback: Any) -> Any:
     """Parse JSON while treating blank, NULL, and malformed values as fallback."""
     if value is None or value == "":
@@ -361,7 +385,12 @@ def _event_select_columns(conn: sqlite3.Connection, alias: str = "") -> str:
     return ", ".join(select_parts)
 
 
-def _load_actual_events_for_run(conn: sqlite3.Connection, run_id: str, limit: int = MAX_SELECTED_RUN_ROWS) -> list[Record]:
+def _load_actual_events_for_run(conn: sqlite3.Connection, run_id: str) -> list[Record]:
+    """Load every trace event for a selected reconstructed run.
+
+    Selected-run playback is a correctness comparison, not a UI browsing query,
+    so it intentionally does not apply MAX_FILTERED_PLAYBACK_ROWS.
+    """
     if not (_table_exists(conn, "actual_run_events") and _table_exists(conn, "trace_events")):
         return []
     columns = _event_select_columns(conn, "e")
@@ -372,9 +401,8 @@ def _load_actual_events_for_run(conn: sqlite3.Connection, run_id: str, limit: in
         JOIN actual_run_events re ON re.event_id = e.id
         WHERE re.run_id = ?
         ORDER BY e.entry_datetime ASC, e.sr_no ASC, e.sub_seq_no ASC, e.id ASC
-        LIMIT ?
         """,
-        (run_id, limit),
+        (run_id,),
     ).fetchall()
     return _dicts(rows)
 
@@ -438,70 +466,120 @@ def compare_expected_to_actual(expected: list[Record], actual: list[Record]) -> 
     Compare expected steps to actual trace events.
 
     Matching strategy:
-    1. Exact SrNo/SubSeqNo when both expected and actual have both fields.
-    2. SrNo-only match when the expected step lacks SubSeqNo.
-    3. Text fallback using normalized step text.
+    1. Match each expected step to one actual event by exact SrNo/SubSeqNo.
+    2. Match SrNo-only expected steps to one actual event with the same SrNo.
+    3. Match remaining expected steps by normalized step text.
 
-    This avoids false missing/unexpected results when instrumentation knows SrNo
-    but not SubSeqNo, while still detecting true unexpected rows when expected
-    steps are fully numbered.
+    Duplicate/retry actual rows are not unexpected when an already explained
+    expected key or step text accounts for them. If the same SrNo/SubSeqNo is
+    present but the text is materially different, the actual row remains
+    unexpected so bad instrumentation is still visible.
     """
     matched_expected: set[int] = set()
     matched_actual: set[int] = set()
 
-    # Fast indexes for actual events.
     actual_exact: dict[tuple[int, int], list[int]] = defaultdict(list)
     actual_sr: dict[int, list[int]] = defaultdict(list)
     actual_text: list[tuple[int, str]] = []
 
-    for idx, event in enumerate(actual):
-        sr = _none_or_int(event.get("sr_no"))
-        sub = _none_or_int(event.get("sub_seq_no"))
-        if sr is not None:
-            actual_sr[sr].append(idx)
-            if sub is not None:
-                actual_exact[(sr, sub)].append(idx)
-        text = normal_step(event.get("step"))
-        if text:
-            actual_text.append((idx, text))
+    expected_exact: dict[tuple[int, int], list[int]] = defaultdict(list)
+    expected_sr: dict[int, list[int]] = defaultdict(list)
+    expected_text: list[tuple[int, str]] = []
 
-    # Pass 1 and 2: structured SrNo/SubSeqNo matching.
     for e_idx, step in enumerate(expected):
         sr = _none_or_int(step.get("sr_no"))
         sub = _none_or_int(step.get("sub_seq_no"))
-        candidates: list[int] = []
-        if sr is not None and sub is not None:
-            candidates = actual_exact.get((sr, sub), [])
-        elif sr is not None:
-            candidates = actual_sr.get(sr, [])
+        if sr is not None:
+            expected_sr[sr].append(e_idx)
+            if sub is not None:
+                expected_exact[(sr, sub)].append(e_idx)
+        text = normal_step(step.get("step") or step.get("step_text"))
+        if text:
+            expected_text.append((e_idx, text))
 
+    for a_idx, event in enumerate(actual):
+        sr = _none_or_int(event.get("sr_no"))
+        sub = _none_or_int(event.get("sub_seq_no"))
+        if sr is not None:
+            actual_sr[sr].append(a_idx)
+            if sub is not None:
+                actual_exact[(sr, sub)].append(a_idx)
+        text = normal_step(event.get("step"))
+        if text:
+            actual_text.append((a_idx, text))
+
+    def match_expected_to_actual(e_idx: int, candidates: list[int]) -> None:
+        if e_idx in matched_expected:
+            return
         for a_idx in candidates:
             if a_idx not in matched_actual:
                 matched_expected.add(e_idx)
                 matched_actual.add(a_idx)
-                break
+                return
 
-    # Pass 3: text fallback for unmatched expected steps.
+    # Pass 1: exact SrNo/SubSeqNo matching.
+    for e_idx, step in enumerate(expected):
+        sr = _none_or_int(step.get("sr_no"))
+        sub = _none_or_int(step.get("sub_seq_no"))
+        if sr is not None and sub is not None:
+            match_expected_to_actual(e_idx, actual_exact.get((sr, sub), []))
+
+    # Pass 2: SrNo-only matching only for expected steps without SubSeqNo.
     for e_idx, step in enumerate(expected):
         if e_idx in matched_expected:
             continue
-        expected_text = normal_step(step.get("step") or step.get("step_text"))
-        if not expected_text:
+        sr = _none_or_int(step.get("sr_no"))
+        sub = _none_or_int(step.get("sub_seq_no"))
+        if sr is not None and sub is None:
+            match_expected_to_actual(e_idx, actual_sr.get(sr, []))
+
+    # Pass 3: text fallback for unmatched expected steps.
+    for e_idx, expected_step_text in expected_text:
+        if e_idx in matched_expected:
             continue
         for a_idx, actual_step_text in actual_text:
             if a_idx in matched_actual:
                 continue
-            if _step_texts_match(expected_text, actual_step_text):
+            if _step_texts_match(expected_step_text, actual_step_text):
                 matched_expected.add(e_idx)
                 matched_actual.add(a_idx)
                 break
 
     missing_expected = [step for idx, step in enumerate(expected) if idx not in matched_expected]
 
-    # Only mark actual rows as unexpected when there is a usable expected path.
-    # If no expected path exists, callers should use expected_unavailable=True
-    # and must not present this as a successful zero-delta comparison.
-    unexpected_actual = [event for idx, event in enumerate(actual) if idx not in matched_actual] if expected else []
+    def actual_is_explained_duplicate(event: Record) -> bool:
+        sr = _none_or_int(event.get("sr_no"))
+        sub = _none_or_int(event.get("sub_seq_no"))
+        actual_step_text = normal_step(event.get("step"))
+
+        def text_blank_or_similar(e_idx: int) -> bool:
+            if not actual_step_text:
+                return True
+            expected_step_text = normal_step(expected[e_idx].get("step") or expected[e_idx].get("step_text"))
+            return _step_texts_match(expected_step_text, actual_step_text)
+
+        if sr is not None and sub is not None:
+            keyed_expected = expected_exact.get((sr, sub), [])
+            if keyed_expected:
+                return any(text_blank_or_similar(e_idx) for e_idx in keyed_expected)
+
+        if sr is not None:
+            sr_only_expected = [e_idx for e_idx in expected_sr.get(sr, []) if _none_or_int(expected[e_idx].get("sub_seq_no")) is None]
+            if sr_only_expected:
+                return any(text_blank_or_similar(e_idx) for e_idx in sr_only_expected)
+
+        if actual_step_text:
+            return any(_step_texts_match(expected_step_text, actual_step_text) for _e_idx, expected_step_text in expected_text)
+        return False
+
+    unexpected_actual: list[Record] = []
+    if expected:
+        for idx, event in enumerate(actual):
+            if idx in matched_actual:
+                continue
+            if actual_is_explained_duplicate(event):
+                continue
+            unexpected_actual.append(event)
 
     expected_count = len(expected)
     missing_count = len(missing_expected)
@@ -587,7 +665,7 @@ def analyze(conn: sqlite3.Connection, live_summary: dict[str, Any] | None = None
 
     # Prefer actual_runs status when run reconstruction exists. Fall back to the
     # older Entered-vs-Completed heuristic when no reconstructed runs are stored.
-    if _table_exists(conn, "actual_runs"):
+    if _table_exists(conn, "actual_runs") and _actual_runs_count(conn) > 0:
         for row in conn.execute(
             """
             SELECT name, type, '' AS execution_query,
@@ -1030,7 +1108,7 @@ def playback_payload(conn: sqlite3.Connection, filters: dict[str, Any]) -> dict[
     """Return playback comparison for either a selected run or filter context."""
     run_id = filters.get("run_id")
     if run_id:
-        actual = _load_actual_events_for_run(conn, str(run_id), MAX_SELECTED_RUN_ROWS)
+        actual = _load_actual_events_for_run(conn, str(run_id))
         # Derive context from the run's actual events if the caller did not pass it.
         if actual:
             filters.setdefault("name", actual[0].get("name"))
@@ -1053,6 +1131,11 @@ def playback_payload(conn: sqlite3.Connection, filters: dict[str, Any]) -> dict[
         "transitions": transitions,
         "parameter_profiles": parameter_profiles,
         "delta": comparison["delta"],
+        "actual_truncated": False,
+        "actual_total_count": len(actual),
+        "actual_returned_count": len(actual),
+        "expected_source": expected[0].get("source") if expected else None,
+        "context_run_id": str(run_id) if run_id else None,
     }
 
 
@@ -1263,8 +1346,11 @@ def reconstruct_and_save_runs(conn: sqlite3.Connection, start_time: str | None =
     if not runs_to_insert:
         return 0
 
+    before = conn.in_transaction
+    savepoint_active = False
     try:
-        conn.execute("BEGIN")
+        conn.execute("SAVEPOINT analyzer_reconstruct_runs")
+        savepoint_active = True
         conn.executemany(
             """
             INSERT INTO actual_runs
@@ -1285,7 +1371,7 @@ def reconstruct_and_save_runs(conn: sqlite3.Connection, start_time: str | None =
                         run_id,
                         delta["missing_count"],
                         delta["unexpected_count"],
-                        delta["score"],
+                        _storage_score_for_run_delta(conn, delta["score"]),
                         _json_dumps(delta["delta_json"]),
                     )
                 )
@@ -1296,9 +1382,16 @@ def reconstruct_and_save_runs(conn: sqlite3.Connection, start_time: str | None =
                 """,
                 deltas_to_insert,
             )
-        conn.commit()
+        conn.execute("RELEASE SAVEPOINT analyzer_reconstruct_runs")
+        savepoint_active = False
+        if not before:
+            conn.commit()
     except Exception:
-        conn.rollback()
+        if savepoint_active:
+            conn.execute("ROLLBACK TO SAVEPOINT analyzer_reconstruct_runs")
+            conn.execute("RELEASE SAVEPOINT analyzer_reconstruct_runs")
+        if not before:
+            conn.rollback()
         raise
 
     return len(runs_to_insert)
@@ -1423,15 +1516,16 @@ def get_run_detail(conn: sqlite3.Connection, run_id: str) -> Record:
         delta_row = conn.execute("SELECT * FROM run_deltas WHERE run_id = ?", (run_id,)).fetchone()
         if delta_row:
             details = _safe_json_loads(delta_row["delta_json"], {})
+            expected_unavailable = bool(details.get("expected_unavailable"))
             run["delta"] = {
                 "missing_count": delta_row["missing_count"],
                 "unexpected_count": delta_row["unexpected_count"],
-                "score": delta_row["score"],
-                "expected_unavailable": bool(details.get("expected_unavailable")),
+                "score": None if expected_unavailable else delta_row["score"],
+                "expected_unavailable": expected_unavailable,
                 "details": details,
             }
 
-    run["events"] = _load_actual_events_for_run(conn, run_id, MAX_SELECTED_RUN_ROWS)
+    run["events"] = _load_actual_events_for_run(conn, run_id)
     return run
 
 
@@ -1450,6 +1544,9 @@ def analyze_run_delta(conn: sqlite3.Connection, run_id: str, name: str, events: 
         "delta_json": {
             "expected_unavailable": unavailable,
             "expected_source": expected[0].get("source") if expected else None,
+            "expected_count": delta["expected_count"],
+            "actual_count": delta["actual_count"],
+            "score": delta["score"],
             "missing": comparison["missing_expected"],
             "unexpected": comparison["unexpected_actual"],
         },
