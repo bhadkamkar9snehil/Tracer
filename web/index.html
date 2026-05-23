@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XStudio Tracer</title>
+    <meta name="description" content="SQL trace visualizer for XStudio/XMES stored-procedure execution flows" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle filters">Filters</button>
+    <div id="app-shell">
+      <aside class="left-rail">
+        <header class="brand-block">
+          <div class="system-label">XSTUDIO TRACE ENGINE</div>
+          <h1>Tracer</h1>
+          <div id="connection-state" class="state-pill">BOOTING</div>
+        </header>
+
+        <section class="rail-section collapsed">
+          <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Run Selector <span class="arrow">▼</span></div>
+          <div class="rail-body">
+            <dl class="kv">
+              <dt>Rows</dt><dd id="metric-rows">--</dd>
+              <dt>SPs</dt><dd id="metric-names">--</dd>
+              <dt>Cache</dt><dd id="metric-cache">--</dd>
+            </dl>
+            <div class="split-fields">
+              <label>Source
+                <select id="filter-source">
+                  <option value="cache">Cache</option>
+                  <option value="sql">Live SQL</option>
+                </select>
+              </label>
+              <label>Limit
+                <input id="filter-limit" type="number" min="10" max="5000" step="10" value="200" />
+              </label>
+            </div>
+            <button id="sync-button" class="wide">Sync trace rows</button>
+          </div>
+        </section>
+
+        <section class="rail-section collapsed">
+          <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Time Window <span class="arrow">▼</span></div>
+          <div class="rail-body">
+            <dl class="kv"><dt>Range</dt><dd id="metric-range">--</dd></dl>
+            <div class="date-range">
+              <label>From<input id="filter-start" type="datetime-local" /></label>
+              <label>To<input id="filter-end" type="datetime-local" /></label>
+            </div>
+            <div class="field-hint">Format: YYYY-MM-DD HH:mm. From must be before To.</div>
+          </div>
+        </section>
+
+        <section class="rail-section collapsed">
+          <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Trace Filters <span class="arrow">▼</span></div>
+          <div class="rail-body">
+            <label>SP Name<select id="filter-name"><option value="">All procedures</option></select></label>
+            <label>Trace Type<select id="filter-type"><option value="">All types</option></select></label>
+            <label>Execution Run<select id="filter-run"><option value="">-- Loose Events --</option></select></label>
+            <div class="split-fields">
+              <label>SrNo<input id="filter-sr" type="number" min="0" placeholder="any" /></label>
+              <label>SubSeq<input id="filter-subseq" type="number" min="0" placeholder="any" /></label>
+            </div>
+            <label>Step Contains<input id="filter-step" type="search" placeholder="Entered, Completed..." /></label>
+            <label>Search Evidence<input id="filter-q" type="search" placeholder="step, query, details" /></label>
+            <div id="filter-status" class="filter-status">Showing latest cached trace rows.</div>
+          </div>
+        </section>
+
+        <section class="rail-section sticky-bottom">
+          <div class="rail-body">
+            <button id="apply-filters" class="primary wide">Apply Filters</button>
+            <button id="wrong-mode" class="danger wide">What is wrong?</button>
+            <div class="button-row" style="margin-top:0.5rem">
+              <button id="open-runtime">Runtime log</button>
+              <button id="open-sp-map">SP map</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+      <div id="sidebar-resizer" class="sidebar-resizer" title="Drag to resize filters"></div>
+
+      <main class="workspace">
+        <section class="top-strip">
+          <div class="stat">
+            <span>Dominant SP</span>
+            <strong id="dominant-sp">--</strong>
+          </div>
+          <div class="stat">
+            <span>Top Type</span>
+            <strong id="dominant-type">--</strong>
+          </div>
+          <div class="stat action-stat" id="top-wrong-action" title="Click to view damage diagnosis">
+            <span>Open Damage</span>
+            <strong id="damage-count">--</strong>
+          </div>
+          <div class="stat">
+            <span>Watermark</span>
+            <strong id="watermark">--</strong>
+          </div>
+          <div class="stat">
+            <span>Runtime</span>
+            <strong id="runtime-started">--</strong>
+          </div>
+        </section>
+
+        <section class="graph-frame">
+          <canvas id="graph-canvas"></canvas>
+          <div class="graph-controls">
+            <select id="graph-scope" title="Graph scope">
+              <option value="focused">Focused SP</option>
+              <option value="selected">Selected SP</option>
+              <option value="neighbourhood">Neighbourhood</option>
+              <option value="all" selected>All System</option>
+            </select>
+            <select id="view-mode" title="Graph view mode">
+              <option value="workflow">Workflow Map</option>
+              <option value="steps">Step Tower</option>
+              <option value="damage">Damage Focus</option>
+              <option value="expected">Expected Path</option>
+            </select>
+            <select id="color-scheme" title="Color scheme">
+              <option value="default">Default</option>
+              <option value="ocean">Ocean</option>
+              <option value="graphite">Graphite</option>
+              <option value="contrast">Contrast</option>
+            </select>
+            <button id="view-reset">Reset</button>
+            <button id="view-top">Top</button>
+            <button id="view-front">Front</button>
+            <button id="export-graph">PNG</button>
+            <button id="run-playback">Playback</button>
+            <button id="open-map-key" title="Show color & shape legend">Map Key</button>
+          </div>
+          <div class="graph-overlay">
+            <div id="graph-overlay-title">Focused SP View</div>
+            <span id="graph-overlay-info">Loading...</span>
+          </div>
+
+          <div id="hover-tooltip" class="hover-tooltip" hidden></div>
+
+          <!-- Floating Camera Controls Widget -->
+          <div class="camera-controls-widget">
+            <div class="widget-section">
+              <div class="widget-title">PAN</div>
+              <div class="dpad-grid">
+                <div></div>
+                <button id="cam-pan-up" class="dpad-btn" title="Pan Up">▲</button>
+                <div></div>
+                <button id="cam-pan-left" class="dpad-btn" title="Pan Left">◀</button>
+                <div class="dpad-center">●</div>
+                <button id="cam-pan-right" class="dpad-btn" title="Pan Right">▶</button>
+                <div></div>
+                <button id="cam-pan-down" class="dpad-btn" title="Pan Down">▼</button>
+                <div></div>
+              </div>
+            </div>
+            <div class="widget-divider"></div>
+            <div class="widget-section">
+              <div class="widget-title">ORBIT</div>
+              <div class="dpad-grid">
+                <div></div>
+                <button id="cam-rot-up" class="dpad-btn" title="Orbit Up">▲</button>
+                <div></div>
+                <button id="cam-rot-left" class="dpad-btn" title="Orbit Left">◀</button>
+                <div class="dpad-center">↺</div>
+                <button id="cam-rot-right" class="dpad-btn" title="Orbit Right">▶</button>
+                <div></div>
+                <button id="cam-rot-down" class="dpad-btn" title="Orbit Down">▼</button>
+                <div></div>
+              </div>
+            </div>
+            <div class="widget-divider"></div>
+            <div class="widget-section">
+              <div class="widget-title">ZOOM</div>
+              <div class="zoom-row">
+                <button id="cam-zoom-in" class="zoom-btn" title="Zoom In">+</button>
+                <button id="cam-zoom-out" class="zoom-btn" title="Zoom Out">−</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="diagnostic-drawer drawer-collapsed" id="diagnostic-drawer">
+          <header class="drawer-header" id="drawer-toggle">
+            <div class="drawer-title">
+               <span class="indicator"></span>
+               Diagnostic Drawer
+            </div>
+            <div class="drawer-modes">
+              <button class="drawer-mode-button active" data-mode="diagnosis">Diagnosis</button>
+              <button class="drawer-mode-button" data-mode="timeline">Timeline</button>
+              <button class="drawer-mode-button" data-mode="evidence">Evidence</button>
+              <button class="drawer-mode-button" data-mode="raw">Raw Trace</button>
+            </div>
+            <span class="drawer-arrow">▲</span>
+          </header>
+          <div class="drawer-body">
+            <div id="drawer-diagnosis" class="drawer-panel active">
+               <div class="diagnosis-grid" id="diagnosis-container"></div>
+            </div>
+            <div id="drawer-timeline" class="drawer-panel">
+               <div class="playback-controls" style="padding: 1rem; border-bottom: 1px solid #2a3035;">
+                 <button id="playback-play" class="primary">Play</button>
+                 <button id="playback-pause">Pause</button>
+                 <button id="playback-stop">Stop</button>
+                 <span id="playback-status" style="margin-left: 1rem; color: #8d9698;">Stopped</span>
+               </div>
+               <div id="timeline-events" style="padding: 1rem; color: #eee;">Select a run and press Play to see events.</div>
+            </div>
+            <div id="drawer-evidence" class="drawer-panel">
+               <pre id="drawer-evidence-content" style="padding: 1rem; color: #eee; font-family: monospace; white-space: pre-wrap; margin: 0;">Select a diagnosis or node to see evidence.</pre>
+            </div>
+            <div id="drawer-raw" class="drawer-panel">
+               <div id="raw-table-container"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal-backdrop" class="modal-backdrop" hidden>
+      <section class="modal-panel">
+        <header class="modal-header">
+          <div>
+            <div id="modal-kicker" class="panel-title">Inspector</div>
+            <h2 id="inspect-title">Select a node</h2>
+          </div>
+          <button id="close-modal">Close</button>
+        </header>
+        <div id="inspect-meta" class="meta-grid"></div>
+        <div class="subhead">Evidence</div>
+        <pre id="inspect-evidence">Click an SP, step, table, or edge in the 3D map.</pre>
+        <div id="tab-runtime"></div>
+      </section>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

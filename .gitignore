@@ -1,0 +1,49 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local environment/config secrets
+.env
+.env.*
+!.env.example
+
+# Runtime output, logs, and local databases
+*.log
+logs/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.sqlite-journal
+
+# Generated UI/test artifacts
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Build/distribution output
+build/
+dist/
+*.egg-info/
+node_modules/
