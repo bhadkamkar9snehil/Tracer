@@ -97,6 +97,7 @@ let maxTextureAnisotropy = 1;
 let nodeMeshes = [];
 let selectedMesh = null;
 let nodePositions = new Map();
+let graphFitBounds = null;
 let cameraTarget = new THREE.Vector3(0, 0, -120);
 let cameraSpherical = { radius: 900, theta: 0, phi: 1.1 };
 const BASE_CAMERA_FOV = 46;
@@ -1171,7 +1172,7 @@ function setupGraph() {
   maxTextureAnisotropy = renderer.capabilities.getMaxAnisotropy();
   scene = new THREE.Scene();
   scene.background = new THREE.Color(currentScheme().scene);
-  camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, 1, 1, 5000);
+  camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, 1, 1, 12000);
   updateCamera();
   raycaster = new THREE.Raycaster();
   pointer = new THREE.Vector2();
@@ -1374,6 +1375,7 @@ function renderGraph() {
       applySelectedVisual(mesh);
     }
   });
+  updateGraphFitBounds(nodes, resolvedPositions);
 
   /* Phase 1: edge filtering with priority */
   const visibleIds = new Set(nodes.map((n) => n.id));
@@ -2727,34 +2729,88 @@ function onPointerUp(event) {
 function onWheel(event) {
   event.preventDefault();
   const factor = event.deltaY * 0.001;
-  cameraSpherical.radius = clamp(cameraSpherical.radius * (1 + factor), 220, 2600);
+  cameraSpherical.radius = clamp(cameraSpherical.radius * (1 + factor), 220, 8000);
   updateCamera();
 }
 
 function resetCamera() {
-  if (state.selected) {
-    const mesh = nodeMeshes.find(m => m.userData.id === state.selected.id);
-    if (mesh) {
-      cameraTarget.copy(mesh.position);
-      setCamera(600, cameraSpherical.theta, cameraSpherical.phi);
-      return;
-    }
-  }
-  if (state.focusedNodeId) {
-    const mesh = nodeMeshes.find(m => m.userData.id === state.focusedNodeId);
-    if (mesh) {
-      cameraTarget.copy(mesh.position);
-      setCamera(700, cameraSpherical.theta, cameraSpherical.phi);
-      return;
-    }
-  }
-  cameraTarget = new THREE.Vector3(0, 0, -120);
-  setCamera(900, 0, 1.1);
+  fitCameraToVisibleGraph();
 }
 
 function setCamera(radius, theta, phi) {
   cameraSpherical = { radius, theta, phi };
   updateCamera();
+}
+
+function updateGraphFitBounds(nodes, positions) {
+  if (!nodes.length || !positions.size) {
+    graphFitBounds = null;
+    return;
+  }
+  const box = new THREE.Box3();
+  for (const node of nodes) {
+    const position = positions.get(node.id);
+    if (!position) continue;
+    const padX = node.kind === "step" ? 55 : 120;
+    const padY = node.kind === "step" ? 45 : 95;
+    const padZ = node.kind === "step" ? 55 : 120;
+    box.expandByPoint(new THREE.Vector3(position.x - padX, position.y - padY, position.z - padZ));
+    box.expandByPoint(new THREE.Vector3(position.x + padX, position.y + padY, position.z + padZ));
+  }
+  graphFitBounds = box.isEmpty() ? null : box;
+}
+
+function fitCameraToVisibleGraph() {
+  if (!graphFitBounds || graphFitBounds.isEmpty()) {
+    cameraTarget = new THREE.Vector3(0, 0, -120);
+    setCamera(900, 0, 1.1);
+    return;
+  }
+
+  const center = new THREE.Vector3();
+  graphFitBounds.getCenter(center);
+
+  const theta = 0;
+  const phi = 1.05;
+  const verticalFov = THREE.MathUtils.degToRad(camera.fov || BASE_CAMERA_FOV);
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(camera.aspect || 1, 0.1));
+  const tanVertical = Math.tan(verticalFov / 2);
+  const tanHorizontal = Math.tan(horizontalFov / 2);
+  const viewOffset = new THREE.Vector3(
+    Math.sin(phi) * Math.sin(theta),
+    Math.cos(phi),
+    Math.sin(phi) * Math.cos(theta)
+  ).normalize();
+  const forward = viewOffset.clone().negate();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  const corners = [
+    new THREE.Vector3(graphFitBounds.min.x, graphFitBounds.min.y, graphFitBounds.min.z),
+    new THREE.Vector3(graphFitBounds.min.x, graphFitBounds.min.y, graphFitBounds.max.z),
+    new THREE.Vector3(graphFitBounds.min.x, graphFitBounds.max.y, graphFitBounds.min.z),
+    new THREE.Vector3(graphFitBounds.min.x, graphFitBounds.max.y, graphFitBounds.max.z),
+    new THREE.Vector3(graphFitBounds.max.x, graphFitBounds.min.y, graphFitBounds.min.z),
+    new THREE.Vector3(graphFitBounds.max.x, graphFitBounds.min.y, graphFitBounds.max.z),
+    new THREE.Vector3(graphFitBounds.max.x, graphFitBounds.max.y, graphFitBounds.min.z),
+    new THREE.Vector3(graphFitBounds.max.x, graphFitBounds.max.y, graphFitBounds.max.z),
+  ];
+  let fitDistance = 350;
+  for (const corner of corners) {
+    const rel = corner.sub(center);
+    fitDistance = Math.max(
+      fitDistance,
+      Math.abs(rel.dot(right)) / tanHorizontal - rel.dot(forward),
+      Math.abs(rel.dot(up)) / tanVertical - rel.dot(forward)
+    );
+  }
+  fitDistance = clamp(fitDistance * 1.28, 350, 8000);
+  const boundingRadius = Math.max(graphFitBounds.getSize(new THREE.Vector3()).length() * 0.5, 180);
+
+  cameraTarget = center;
+  camera.near = 1;
+  camera.far = Math.max(12000, fitDistance + boundingRadius * 4);
+  camera.updateProjectionMatrix();
+  setCamera(fitDistance, theta, phi);
 }
 
 function updateCamera() {
