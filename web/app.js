@@ -415,6 +415,9 @@ function shouldShowLabel(node, selectNeighbours) {
 
   /* In "all" scope, label the important log objects instead of every small object */
   if (state.graphScope === "all") {
+    if (node.kind && node.kind.startsWith("table")) {
+      return isMeaningfulTableName(node.label || node.id) && Boolean(node.table_stack_label);
+    }
     if (node.kind === "procedure" || node.kind === "workflow") {
       return (node.importance || 0) >= 0.015 || (node.degree || 0) >= 20;
     }
@@ -1363,7 +1366,11 @@ function renderGraph() {
         : node.kind === "error" ? 0xc9443c
         : 0xe6e3dc;
       const label = makeLabel(displayName, labelColor, meta);
-      label.position.copy(position).add(new THREE.Vector3(0, node.kind === "step" ? 22 : 38, 0));
+      if (node.kind && node.kind.startsWith("table") && node.table_stack_label) {
+        label.position.copy(position).add(new THREE.Vector3(88, 10, 0));
+      } else {
+        label.position.copy(position).add(new THREE.Vector3(0, node.kind === "step" ? 22 : 38, 0));
+      }
       graphGroup.add(label);
     }
 
@@ -1511,7 +1518,7 @@ function createLaneBands(bandDepth, centerZ, frontBoundary) {
       laneConfigs.push({
         name: laneName,
         x: x,
-        width: 170,
+        width: laneName === "TABLE" ? 560 : 170,
         color: laneColors[laneName] || 0x252a2d
       });
     }
@@ -1999,25 +2006,22 @@ function computeNodePositions(nodes, lanes) {
     return a.id.localeCompare(b.id);
   });
 
-  // Lay out tables in a structured dual-runway grid in the TABLE lane
+  // Lay out tables as a compact readable wall in the TABLE lane. This keeps
+  // table-heavy graphs from stretching into a long runway.
+  const tableColumnOffsets = [-220, 0, 220];
+  const tableRowsPerColumn = 10;
+  const tableLayerDepth = 300;
+  const tableRowHeight = 56;
   group3.forEach((node, index) => {
     const laneName = "TABLE";
     const laneCenter = laneCenters.get(laneName) || 380;
-
-    // 2 staggered columns in the TABLE lane
-    const colIndex = index % 2; // 0, 1
-    const rowIndex = Math.floor(index / 2);
-
-    // Compute X: distribute across left/right of the lane Center
-    const x = laneCenter + (colIndex === 0 ? -45 : 45);
-
-    // Compute Z: staggered along depth
-    const staggerZ = colIndex === 1 ? -60 : 0;
-    const z = -50 - rowIndex * 120 + staggerZ;
-
-    // Compute Y: consistent float above ground
-    const y = -130;
-
+    const stackIndex = index % tableRowsPerColumn;
+    const columnIndex = Math.floor(index / tableRowsPerColumn) % tableColumnOffsets.length;
+    const layerIndex = Math.floor(index / (tableRowsPerColumn * tableColumnOffsets.length));
+    const x = laneCenter + tableColumnOffsets[columnIndex];
+    const y = -130 + stackIndex * tableRowHeight;
+    const z = -90 - layerIndex * tableLayerDepth - columnIndex * 26;
+    node.table_stack_label = index < 30;
     positions.set(node.id, new THREE.Vector3(x, y, z));
   });
 

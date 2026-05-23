@@ -184,7 +184,16 @@ body.rail-collapsed .left-rail {
 }
 
 body.rail-collapsed .sidebar-toggle {
-  left: 8px;
+  left: 0;
+  top: 50%;
+  width: 34px;
+  min-width: 34px;
+  height: 96px;
+  min-height: 96px;
+  padding: 0;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: translateY(-50%) rotate(180deg);
   border-color: var(--focus);
 }
 
