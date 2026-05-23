@@ -62,6 +62,7 @@ let camera;
 let raycaster;
 let pointer;
 let graphGroup;
+let maxTextureAnisotropy = 1;
 let nodeMeshes = [];
 let selectedMesh = null;
 let nodePositions = new Map();
@@ -1066,6 +1067,7 @@ function setupGraph() {
   canvas.style.cursor = "grab";
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  maxTextureAnisotropy = renderer.capabilities.getMaxAnisotropy();
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x151718);
   camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, 1, 1, 5000);
@@ -2003,9 +2005,10 @@ function colorFor(node) {
 }
 
 function nodeMesh(node, volume, selectNeighbours) {
-  const width = node.kind === "step" ? 26 : 46 + volume * 70;
-  const height = node.kind === "step" ? 14 : 26 + volume * 32;
-  const depth = node.kind && node.kind.startsWith("table") ? 38 : 22 + volume * 80;
+  const visualWeight = Math.sqrt(Math.max(0, Math.min(1, volume)));
+  const width = node.kind === "step" ? 30 : 42 + visualWeight * 48;
+  const height = node.kind === "step" ? 12 : 24 + visualWeight * 22;
+  const depth = node.kind && node.kind.startsWith("table") ? 34 : 22 + visualWeight * 46;
   const geometry = geometryForNode(node, width, height, depth);
   const isFocused = node.id === state.focusedNodeId;
   const isSelected = state.selected?.id === node.id;
@@ -2155,31 +2158,48 @@ function edgeLine(a, b, edge, selectNeighbours) {
 function makeLabel(text, color, meta = "") {
   const title = truncate(text, 38);
   const sub = truncate(meta, 42);
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const cssWidth = 360;
+  const cssHeight = sub ? 74 : 54;
   const canvas = document.createElement("canvas");
-  canvas.width = 640;
-  canvas.height = 104;
+  canvas.width = Math.round(cssWidth * pixelRatio);
+  canvas.height = Math.round(cssHeight * pixelRatio);
   const ctx = canvas.getContext("2d");
+  ctx.scale(pixelRatio, pixelRatio);
   ctx.fillStyle = "rgba(13,14,15,0.84)";
-  roundRect(ctx, 0, 0, canvas.width, canvas.height, 10);
+  roundRect(ctx, 0, 0, cssWidth, cssHeight, 8);
   ctx.fill();
   ctx.strokeStyle = "rgba(180,190,194,0.34)";
-  ctx.lineWidth = 1;
-  roundRect(ctx, 0.5, 0.5, canvas.width - 1, canvas.height - 1, 10);
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, 0.75, 0.75, cssWidth - 1.5, cssHeight - 1.5, 8);
   ctx.stroke();
   ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
-  ctx.fillRect(0, 0, 8, canvas.height);
-  ctx.font = "700 24px Consolas, Courier New, monospace";
+  ctx.fillRect(0, 0, 5, cssHeight);
+  ctx.font = "700 18px Consolas, Courier New, monospace";
+  ctx.textBaseline = "alphabetic";
   ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
-  ctx.fillText(title, 20, sub ? 42 : 62);
+  ctx.fillText(title, 16, sub ? 30 : 36);
   if (sub) {
-    ctx.font = "18px Consolas, Courier New, monospace";
+    ctx.font = "13px Consolas, Courier New, monospace";
     ctx.fillStyle = "#a7aaa9";
-    ctx.fillText(sub, 20, 76);
+    ctx.fillText(sub, 16, 56);
   }
   const texture = new THREE.CanvasTexture(canvas);
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = maxTextureAnisotropy;
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(168, 28, 1);
+  sprite.renderOrder = 1000;
+  sprite.scale.set(cssWidth * 0.42, cssHeight * 0.42, 1);
   return sprite;
 }
 
