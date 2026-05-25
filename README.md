@@ -44,6 +44,28 @@ Tracer is expected to grow around the following capabilities:
 - support for sample datasets and reproducible demo scenarios;
 - exportable or shareable views for debugging notes and investigations.
 
+## Placement syntax
+
+The next graph-layout phase is syntax-driven. The backend annotates every graph
+object with a compact placement string and a parsed `placement` object. The
+frontend treats that metadata as the first source of truth for object placement,
+then falls back to older kind-based rules when placement metadata is absent.
+
+Example node placement:
+
+```text
+kind:procedure lane:PROCEDURE role:service relation:focus band:center rank:1 seq:1 weight:100
+```
+
+Current placement fields:
+
+- `kind`: source object type, such as `procedure`, `step`, `table_write`, or `unknown`.
+- `lane`: horizontal semantic lane, such as `PROCEDURE`, `INTERNAL STEP`, `TABLE`, or `UNKNOWN`.
+- `role`: human meaning of the object in the graph, such as `service`, `operation`, or `entity-write`.
+- `relation`: relationship to the current graph context, such as `focus`, `child-step`, `called-by-context`, or `mutated-entity`.
+- `band`: vertical visual band, such as `center`, `upper`, `rail`, `lower`, `active`, or `passive`.
+- `rank`, `seq`, `weight`: deterministic ordering and emphasis values used by the renderer.
+
 ## Example event shape
 
 Tracer will work best with structured logs. A minimal event could look like this:

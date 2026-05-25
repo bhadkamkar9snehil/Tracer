@@ -114,6 +114,8 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Iterable
 
+from tracer.placement import annotate_graph_placement
+
 Row = sqlite3.Row
 Record = dict[str, Any]
 
@@ -1038,6 +1040,7 @@ def graph_payload(conn: sqlite3.Connection) -> dict[str, Any]:
             add_node({"id": row["name"], "label": row["name"], "kind": kind, "shape": "octahedron", "trace_count": row["c"], "found": False})
 
     _enrich_graph_nodes_and_edges(conn, node_map, edges)
+    annotate_graph_placement(node_map, edges, _select_dominant_node(node_map))
     default_focus = _default_focus(node_map, edges)
     return {"nodes": list(node_map.values()), "edges": edges, "default_focus": default_focus}
 

@@ -1915,6 +1915,9 @@ function computeNodePositions(nodes, lanes) {
   group1.sort((a, b) => {
     if (a.id === state.focusedNodeId) return -1;
     if (b.id === state.focusedNodeId) return 1;
+    const rankA = placementNumber(a, "rank", 999999);
+    const rankB = placementNumber(b, "rank", 999999);
+    if (rankA !== rankB) return rankA - rankB;
     const depthA = depthFor(a);
     const depthB = depthFor(b);
     if (Math.abs(depthA - depthB) > 0.01) {
@@ -1929,32 +1932,38 @@ function computeNodePositions(nodes, lanes) {
     const laneName = laneKey(node);
     const laneCenter = laneCenters.get(laneName) || 0;
     const vol = Math.log10((node.trace_count || 0) + 1) / Math.log10(maxTrace + 1);
+    const placement = placementFor(node);
+    const relation = placement.relation || "";
+    const band = placement.band || "";
+    const sequence = placementNumber(node, "seq", placementNumber(node, "rank", 1));
 
     let targetX = laneCenter;
     let targetY = -80 + vol * 360;
-    let targetZ = depthFor(node) * -120;
+    let targetZ = depthFor(node) * -120 - sequence * 10;
     if (depthFor(node) === 0) {
       const hash = hashNumber(node.id);
       targetZ = -(hash % 4) * 60;
     }
 
-    if (node.id === state.focusedNodeId) {
-      // Focused SP: Y = 20, Z = -150, centered in lane
+    if (relation === "focus" || node.id === state.focusedNodeId) {
+      // Focused semantic object: centered in its lane.
       targetY = 20;
       targetZ = -150;
-    } else if (directCalls.has(node.id)) {
-      // Direct Calls: Y >= 120, Z = -320
+    } else if (relation === "called-by-context" || relation === "calls-out" || directCalls.has(node.id)) {
+      // Control-flow neighbors sit high and behind the context object.
       targetY = 120;
       targetZ = -320;
-    } else if (node.kind === "error") {
-      // Errors: Y >= 120, Z = -150
+    } else if (relation === "damage" || node.kind === "error") {
+      // Damage objects stay visually elevated near the front.
       targetY = 120;
       targetZ = -150;
-    } else if (node.kind === "anonymous" || node.kind === "unknown") {
-      // Unknowns: X = 570, Y = -80, Z = -350
+    } else if (relation === "unmapped" || node.kind === "anonymous" || node.kind === "unknown") {
+      // Unknowns are isolated in the unknown lane.
       targetX = 570;
       targetY = -80;
       targetZ = -350;
+    } else if (band === "active") {
+      targetY = Math.max(targetY, 40);
     }
 
     placeNode(node, targetX, targetY, targetZ);
@@ -1963,8 +1972,8 @@ function computeNodePositions(nodes, lanes) {
   // Position Group 2: Steps
   // Sort by sub_seq_no or sr_no
   group2.sort((a, b) => {
-    const seqA = Number(a.sub_seq_no || a.sr_no || 0);
-    const seqB = Number(b.sub_seq_no || b.sr_no || 0);
+    const seqA = placementNumber(a, "seq", Number(a.sub_seq_no || a.sr_no || 0));
+    const seqB = placementNumber(b, "seq", Number(b.sub_seq_no || b.sr_no || 0));
     return seqA - seqB;
   });
 
@@ -1982,7 +1991,7 @@ function computeNodePositions(nodes, lanes) {
     }
 
     // Ordered rail along Z-axis: targetZ = parentZ - offset
-    const offset = Number(node.sub_seq_no || node.sr_no || 1) * 35;
+    const offset = placementNumber(node, "seq", Number(node.sub_seq_no || node.sr_no || 1)) * 35;
     const targetZ = parentZ - offset;
 
     // Offset step X based on parent hash to create distinct, non-overlapping sub-rails
@@ -2000,9 +2009,12 @@ function computeNodePositions(nodes, lanes) {
   // Position Group 3: Tables
   // Sort tables by trace volume and ID to make the layout deterministic
   group3.sort((a, b) => {
-    const volA = a.trace_count || 0;
-    const volB = b.trace_count || 0;
-    if (volB !== volA) return volB - volA;
+    const rankA = placementNumber(a, "rank", 999999);
+    const rankB = placementNumber(b, "rank", 999999);
+    if (rankA !== rankB) return rankA - rankB;
+    const weightA = placementNumber(a, "weight", a.trace_count || 0);
+    const weightB = placementNumber(b, "weight", b.trace_count || 0);
+    if (weightB !== weightA) return weightB - weightA;
     return a.id.localeCompare(b.id);
   });
 
@@ -2026,11 +2038,6 @@ function computeNodePositions(nodes, lanes) {
   });
 
   return positions;
-}
-
-function positionForNode(node, index, lane, laneCount, volume, depth) {
-  // Deprecated - computeNodePositions is now used.
-  return new THREE.Vector3(0,0,0);
 }
 
 function hashNumber(value) {
@@ -2057,12 +2064,31 @@ function intersectSets(left, right) {
   return new Set([...left].filter((item) => right.has(item)));
 }
 
-function filteredEdges(nodeMap) {
-  return state.graph.edges.filter((edge) => nodeMap.has(edge.source) && nodeMap.has(edge.target));
+function placementFor(node) {
+  if (!node) return {};
+  if (node.placement && typeof node.placement === "object") return node.placement;
+  const parsed = {};
+  for (const token of String(node.placement_syntax || "").split(/\s+/)) {
+    const idx = token.indexOf(":");
+    if (idx <= 0) continue;
+    const key = token.slice(0, idx);
+    const rawValue = token.slice(idx + 1);
+    const numeric = Number(rawValue);
+    parsed[key] = Number.isFinite(numeric) && rawValue.trim() !== "" ? numeric : rawValue;
+  }
+  return parsed;
 }
 
-/* Phase 1: stable lane ordering */
+function placementNumber(node, key, fallback = 0) {
+  const value = placementFor(node)[key];
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+/* Phase 1/next phase: stable lane ordering, now backed by placement syntax */
 function laneKey(node) {
+  const placementLane = placementFor(node).lane;
+  if (placementLane && LANE_ORDER.includes(String(placementLane))) return String(placementLane);
   if (node.kind === "error") return "API ERROR";
   if (node.kind === "workflow") return "WORKFLOW";
   if (node.kind === "step") return "INTERNAL STEP";
@@ -2083,6 +2109,12 @@ function laneMap(nodes) {
 }
 
 function depthFor(node) {
+  const placement = placementFor(node);
+  if (placement.relation === "focus") return 0;
+  if (placement.relation === "called-by-context" || placement.relation === "calls-out") return 1;
+  if (placement.relation === "damage") return 1.5;
+  if (placement.relation === "child-step") return 2 + Math.min(4, placementNumber(node, "seq", Number(node.sub_seq_no || 1)) / 6);
+  if (placement.relation === "mutated-entity" || placement.relation === "read-entity") return 4;
   if (node.kind === "step") return 2 + Math.min(4, Number(node.sub_seq_no || 1) / 6);
   if (node.kind && node.kind.startsWith("table")) return 4;
   if (node.kind === "error") return 1.5;
@@ -2500,11 +2532,13 @@ async function inspectNode(node) {
     sub_seq_no: node.sub_seq_no,
     importance: node.importance != null ? (node.importance * 100).toFixed(0) + "%" : undefined,
     severity: node.severity,
-    lane: node.lane,
+    lane: laneKey(node),
+    placement: node.placement_syntax,
   });
   if (node.kind === "step") {
     $("inspect-evidence").textContent = JSON.stringify({
       meaning: "Static expected log point parsed from stored procedure text.",
+      placement: node.placement || placementFor(node),
       selected_step: node,
       matching_visible_events: state.events.filter((event) => event.name === node.parent && (!node.sr_no || event.sr_no === node.sr_no) && (!node.sub_seq_no || event.sub_seq_no === node.sub_seq_no)).slice(0, 20),
     }, null, 2);
@@ -2513,6 +2547,7 @@ async function inspectNode(node) {
   if (node.kind?.startsWith("table")) {
     $("inspect-evidence").textContent = JSON.stringify({
       meaning: "Table/entity node from parsed SP reads/writes/updates. It is not a stored procedure.",
+      placement: node.placement || placementFor(node),
       table: node.label,
       roles: node.roles || [node.kind],
       related_edges: incidentEdges(node.id).slice(0, 80),
@@ -2523,6 +2558,7 @@ async function inspectNode(node) {
   if (node.kind === "anonymous" || node.kind === "unknown") {
     $("inspect-evidence").textContent = JSON.stringify({
       meaning: "Trace source that exists in SQL logs but has weak/no static SP mapping.",
+      placement: node.placement || placementFor(node),
       node,
       recent_visible_events: state.events.filter((event) => (event.name || "<anonymous>") === node.id).slice(0, 20),
     }, null, 2);
@@ -2531,6 +2567,7 @@ async function inspectNode(node) {
   try {
     const detail = await api(`/api/workflows/${encodeURIComponent(node.id)}`);
     $("inspect-evidence").textContent = JSON.stringify({
+      placement: node.placement || placementFor(node),
       procedure: detail.procedure ? {
         log_ref_count: detail.procedure.log_ref_count,
         calls: detail.procedure.calls,
@@ -2625,7 +2662,8 @@ function openMapKeyModal() {
   </div>
   <div class="map-key-section">
     <h3>Axes</h3>
-    <div class="map-key-item">X = semantic lane | Y = trace volume | Z = internal depth</div>
+    <div class="map-key-item">X = placement lane | Y = semantic band/weight | Z = relation depth/sequence</div>
+    <div class="map-key-item">Every graph object exposes placement syntax in the inspector.</div>
   </div>
 </div>`;
 }

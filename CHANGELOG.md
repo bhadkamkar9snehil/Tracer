@@ -12,6 +12,7 @@
 ### Changed
 - Centralized analyzer expected-vs-actual comparison behavior so playback and saved run deltas remain consistent.
 - Made run-delta score storage compatible with both nullable and NOT NULL score schemas.
+- Added syntax-driven graph placement metadata so object positions can be based on semantic meaning instead of hard-coded frontend kind checks alone.
 
 ### Validation
 - Ran Python compile checks.
