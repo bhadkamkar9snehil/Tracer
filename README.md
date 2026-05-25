@@ -48,8 +48,9 @@ Tracer is expected to grow around the following capabilities:
 
 The next graph-layout phase is syntax-driven. The backend annotates every graph
 object with a compact placement string and a parsed `placement` object. The
-frontend treats that metadata as the first source of truth for object placement,
-then falls back to older kind-based rules when placement metadata is absent.
+frontend requires that metadata for object placement. Missing or malformed
+placement metadata is treated as a graph contract error, not silently inferred
+in the browser.
 
 Example node placement:
 

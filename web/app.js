@@ -2065,18 +2065,14 @@ function intersectSets(left, right) {
 }
 
 function placementFor(node) {
-  if (!node) return {};
-  if (node.placement && typeof node.placement === "object") return node.placement;
-  const parsed = {};
-  for (const token of String(node.placement_syntax || "").split(/\s+/)) {
-    const idx = token.indexOf(":");
-    if (idx <= 0) continue;
-    const key = token.slice(0, idx);
-    const rawValue = token.slice(idx + 1);
-    const numeric = Number(rawValue);
-    parsed[key] = Number.isFinite(numeric) && rawValue.trim() !== "" ? numeric : rawValue;
+  if (!node) throw new Error("Placement error: missing graph node.");
+  if (!node.placement || typeof node.placement !== "object") {
+    throw new Error(`Placement error: node ${node.id || "<unknown>"} is missing parsed placement metadata.`);
   }
-  return parsed;
+  if (!node.placement_syntax) {
+    throw new Error(`Placement error: node ${node.id || "<unknown>"} is missing placement_syntax.`);
+  }
+  return node.placement;
 }
 
 function placementNumber(node, key, fallback = 0) {
