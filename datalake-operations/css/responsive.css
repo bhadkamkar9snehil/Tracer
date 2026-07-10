@@ -1,0 +1,91 @@
+/* Breakpoints */
+
+/* Above 1600px: roomier grid gaps, wider drawer */
+@media (min-width: 1600px) {
+    .dl-drawer {
+        width: var(--dim-drawer-width);
+    }
+    .dl-drawer.is-expanded {
+        width: var(--dim-drawer-width-expanded);
+    }
+}
+
+/* 1280-1599px */
+@media (max-width: 1599px) {
+    .dl-view {
+        padding: var(--space-4);
+    }
+    .dl-grid {
+        gap: var(--space-3);
+    }
+}
+
+/* 1024-1279px: metric strip wraps to two rows, secondary charts two columns */
+@media (max-width: 1279px) {
+    .dl-metric-strip {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .dl-col-span-12,
+    .dl-col-span-8,
+    .dl-col-span-16 {
+        grid-column: span 24 !important;
+    }
+}
+
+/* 720-1023px: single column, drawer overlays fully, tables hide low-priority columns */
+@media (max-width: 1023px) {
+    .dl-metric-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .dl-grid > * {
+        grid-column: span 24 !important;
+    }
+    .dl-header {
+        padding: 0 var(--space-3);
+    }
+    .dl-header-left,
+    .dl-header-right {
+        gap: var(--space-2);
+    }
+    .dl-drawer {
+        width: 100%;
+    }
+    .dl-drawer.is-expanded {
+        width: 100%;
+    }
+    .col-hide-md {
+        display: none;
+    }
+}
+
+/* Under 720px: preserve function, list fallback for topology, full-screen drawer */
+@media (max-width: 719px) {
+    .dl-metric-strip {
+        grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
+    .dl-view {
+        padding: var(--space-3);
+    }
+    .dl-event-row {
+        grid-template-columns: 70px 1fr;
+        grid-template-areas:
+            "time state"
+            "event event"
+            "layer duration";
+    }
+    .col-hide-sm {
+        display: none;
+    }
+    .dl-flow-graph-fallback {
+        display: block;
+    }
+    .dl-flow-graph-canvas {
+        display: none;
+    }
+}
+
+@media (min-width: 720px) {
+    .dl-flow-graph-fallback {
+        display: none;
+    }
+}

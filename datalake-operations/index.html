@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Data Lake Operations</title>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/charts.css">
+<link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+<div id="dl-app" class="dl-app">
+  <header id="dl-header" class="dl-header"></header>
+  <nav id="dl-nav" class="dl-nav"></nav>
+  <div id="dl-context-strip" class="dl-context-strip"></div>
+  <main id="dl-view" class="dl-view"></main>
+  <div id="dl-drawer-root" class="dl-drawer-root"></div>
+  <div id="dl-tooltip-root" class="dl-tooltip-root"></div>
+  <div id="dl-toast-root" class="dl-toast-root"></div>
+</div>
+
+<script src="js/vendor/echarts.min.js"></script>
+<script src="js/formatters.js"></script>
+<script src="js/state.js"></script>
+<script src="js/mock-data.js"></script>
+<script src="js/data-source.js"></script>
+<script src="js/prometheus-adapter.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/interactions.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/router.js"></script>
+<script src="js/views/overview.js"></script>
+<script src="js/views/acquisition.js"></script>
+<script src="js/views/storage.js"></script>
+<script src="js/views/processing.js"></script>
+<script src="js/views/quality.js"></script>
+<script src="js/views/publishing.js"></script>
+<script src="js/views/infrastructure.js"></script>
+<script src="js/views/logs.js"></script>
+<script src="js/views/investigation.js"></script>
+<script src="js/views/detail.js"></script>
+<script src="js/app.js"></script>
+<script>
+  (function () {
+    if (window.DataLakeUI && typeof window.DataLakeUI.mount === 'function') {
+      var host = document.getElementById('dl-app');
+      window.DataLakeUI.mount(host, {
+        mode: 'mock',
+        initialRoute: 'flow',
+        refreshIntervalMs: 15000,
+        theme: 'light',
+        hostLabels: { VM1: 'Data Node', VM2: 'Operations Node' },
+        showTechnicalDetails: true
+      });
+    }
+  })();
+</script>
+</body>
+</html>

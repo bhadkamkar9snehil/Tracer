@@ -1,0 +1,106 @@
+/* Design tokens: colour, spacing, typography, radius, shadow, z-index, dimensions */
+:root {
+    /* Colour */
+    --bg-page: #f5f7f9;
+    --bg-surface: #ffffff;
+    --bg-subtle: #f8fafb;
+    --bg-emphasis: #eef2f5;
+    --text-primary: #17202a;
+    --text-secondary: #56616d;
+    --text-muted: #7b8794;
+    --text-inverse: #ffffff;
+    --border-primary: #dce2e7;
+    --border-secondary: #e9edf0;
+    --border-strong: #b7c0c8;
+    --accent-primary: #2463a7;
+    --accent-soft: #e7f0fa;
+    --status-good: #2c7a55;
+    --status-good-soft: #e7f4ed;
+    --status-warning: #a66512;
+    --status-warning-soft: #fbf1df;
+    --status-critical: #b83a3a;
+    --status-critical-soft: #fbe8e8;
+    --status-neutral: #64717e;
+    --status-neutral-soft: #edf0f2;
+    --chart-grid: #e7ebef;
+    --chart-axis: #9aa5af;
+
+    /* Chart categorical palette */
+    --chart-c1: #2463a7;
+    --chart-c2: #4e7f72;
+    --chart-c3: #9b6b3e;
+    --chart-c4: #6a70a8;
+    --chart-c5: #7d8792;
+    --chart-c6: #b8584c;
+    --chart-c7: #488095;
+    --chart-c8: #81714d;
+
+    /* Spacing scale */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+
+    /* Typography */
+    --font-family: Inter, "Segoe UI", Arial, sans-serif;
+    --font-size-metric: 30px;
+    --font-size-section: 18px;
+    --font-size-chart-title: 15px;
+    --font-size-body: 13px;
+    --font-size-label: 12px;
+    --font-size-micro: 11px;
+
+    /* Radius */
+    --radius-small: 4px;
+    --radius-medium: 6px;
+    --radius-large: 8px;
+
+    /* Shadow */
+    --shadow-drawer: -4px 0 16px rgba(23, 32, 42, 0.12);
+    --shadow-popover: 0 4px 14px rgba(23, 32, 42, 0.16);
+
+    /* Z-index */
+    --z-header: 40;
+    --z-nav: 30;
+    --z-drawer: 60;
+    --z-tooltip: 80;
+    --z-toast: 90;
+
+    /* Dimensions */
+    --dim-header-height: 56px;
+    --dim-nav-height: 48px;
+    --dim-context-height: 36px;
+    --dim-drawer-width: 420px;
+    --dim-drawer-width-expanded: 560px;
+}
+
+:root[data-theme="dark"] {
+    --bg-page: #12161b;
+    --bg-surface: #181e25;
+    --bg-subtle: #1c232b;
+    --bg-emphasis: #232b34;
+    --text-primary: #eef2f5;
+    --text-secondary: #b3bec8;
+    --text-muted: #8592a0;
+    --text-inverse: #17202a;
+    --border-primary: #2b333c;
+    --border-secondary: #232b34;
+    --border-strong: #3a4450;
+    --accent-primary: #5b9bd8;
+    --accent-soft: #1e2f42;
+    --status-good: #4fae82;
+    --status-good-soft: #16281f;
+    --status-warning: #d99a3f;
+    --status-warning-soft: #2c2214;
+    --status-critical: #e17070;
+    --status-critical-soft: #2e1818;
+    --status-neutral: #92a0ad;
+    --status-neutral-soft: #232b34;
+    --chart-grid: #262e37;
+    --chart-axis: #6b7684;
+}
