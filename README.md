@@ -13,7 +13,7 @@ The application is intentionally cache-first. It remains usable when SQL Server 
 - Sequence-variant frequency analysis.
 - Per-step median, p95, p99, and maximum latency analysis.
 - Execution, deviation, and failure density over time.
-- Filters for procedure, type, status, and ordering.
+- Filters for inclusive date range, procedure, type, status, and ordering.
 - Resizable inbox, evidence, matrix, and bottom-analysis panels with per-browser layout persistence.
 - CSV export of the currently visible executions.
 - Explicit, bounded SQL synchronization into a local SQLite cache.
@@ -152,6 +152,8 @@ Supported `/api/atlas` query parameters:
 ```text
 name, type, status, start, end, sort, limit
 ```
+
+`start` and `end` accept `YYYY-MM-DD`; both selected calendar days are inclusive.
 
 `limit` is bounded to 20–300 matrix rows. Analysis still covers all matching runs up to the backend safety limit; only the interactive matrix is capped.
 

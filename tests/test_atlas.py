@@ -88,6 +88,20 @@ class AtlasTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["executions"], 1)
         self.assertEqual(payload["runs"][0]["run_id"], "problem-run")
 
+    def test_date_only_end_includes_the_entire_selected_day(self) -> None:
+        payload = atlas.atlas_payload(
+            self.conn,
+            {"start": "2026-01-01", "end": "2026-01-01", "limit": "50"},
+        )
+        self.assertEqual(payload["summary"]["executions"], 13)
+
+    def test_date_range_excludes_runs_outside_the_selected_days(self) -> None:
+        payload = atlas.atlas_payload(
+            self.conn,
+            {"start": "2026-01-02", "end": "2026-01-02", "limit": "50"},
+        )
+        self.assertEqual(payload["summary"]["executions"], 0)
+
     def test_filter_options_include_procedure_type_cohorts(self) -> None:
         payload = atlas.atlas_payload(self.conn, {"limit": "50"})
         self.assertEqual(

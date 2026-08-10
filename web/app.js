@@ -42,6 +42,9 @@ function bindActions() {
     applyFilters();
   });
   ["filter-type", "filter-status", "filter-sort"].forEach((id) => $(id).addEventListener("change", applyFilters));
+  $("filter-start").addEventListener("change", () => applyDateFilter("start"));
+  $("filter-end").addEventListener("change", () => applyDateFilter("end"));
+  $("clear-dates").addEventListener("click", clearDateFilters);
   $("sync-data").addEventListener("click", syncData);
   $("export-visible").addEventListener("click", exportVisible);
   $("close-inspector").addEventListener("click", () => $("inspector-panel").classList.remove("open"));
@@ -278,6 +281,15 @@ function populateFilterOptions(filters) {
   replaceOptions($("filter-status"), "All outcomes", filters.statuses.map((status) => ({ status })), (item) => ({ label: titleCase(item.status), value: item.status }));
   $("filter-status").value = selected.status || "";
   $("filter-sort").value = selected.sort || "deviation";
+  const firstDate = dateOnly(filters.bounds?.start);
+  const lastDate = dateOnly(filters.bounds?.end);
+  [$("filter-start"), $("filter-end")].forEach((input) => {
+    input.min = firstDate;
+    input.max = lastDate;
+  });
+  $("filter-start").value = validDate(selected.start);
+  $("filter-end").value = validDate(selected.end);
+  updateClearDatesState();
   state.filterOptionsLoaded = true;
 }
 
@@ -489,8 +501,31 @@ function renderVariants() {
 }
 
 function renderLatency() {
-  const items=state.atlas.latency; const globalMax=Math.max(1,...items.map((item)=>item.max_ms));
-  $("latency-chart").innerHTML=items.map((item)=>{ const max=100-item.max_ms/globalMax*92, p95=100-item.p95_ms/globalMax*92, p50=100-item.p50_ms/globalMax*92; const visibleLabel=item.step.startsWith("ordinal:")?item.label:item.step; return `<div class="latency-step" title="${escapeHtml(item.label)} · p50 ${formatMs(item.p50_ms)} · p95 ${formatMs(item.p95_ms)} · max ${formatMs(item.max_ms)}"><div class="latency-box" style="--max:${max}%;--p95:${p95}%;--p50:${p50}%"><i class="latency-max"></i></div><label>${escapeHtml(visibleLabel)}</label></div>`;}).join("") || `<div class="empty-list">No latency distribution available.</div>`;
+  const items = state.atlas.latency;
+  if (!items.length) {
+    $("latency-chart").innerHTML = `<div class="empty-list">No latency distribution available for this date range.</div>`;
+    return;
+  }
+  const globalMax = Math.max(1, ...items.map((item) => item.max_ms));
+  const scale = (value) => Math.max(0, Math.min(100, Math.log1p(Number(value || 0)) / Math.log1p(globalMax) * 100));
+  const rows = items.map((item, index) => {
+    const max = scale(item.max_ms);
+    const p95 = scale(item.p95_ms);
+    const p50 = scale(item.p50_ms);
+    const slowClass = item.slow_rate >= .1 ? "high" : item.slow_rate > 0 ? "some" : "";
+    return `<tr>
+      <td class="latency-name"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</strong></td>
+      <td class="latency-distribution"><div class="latency-track" title="Logarithmic scale keeps short and long steps comparable"><i class="latency-maximum" style="width:${max}%"></i><i class="latency-p95" style="width:${p95}%"></i><i class="latency-median" style="left:${p50}%"></i></div></td>
+      <td class="latency-value">${formatMs(item.p50_ms)}</td>
+      <td class="latency-value p95">${formatMs(item.p95_ms)}</td>
+      <td class="latency-value">${formatMs(item.max_ms)}</td>
+      <td class="latency-slow ${slowClass}">${formatPercent(item.slow_rate)}</td>
+    </tr>`;
+  }).join("");
+  $("latency-chart").innerHTML = `<table class="latency-table" aria-label="Per-step latency comparison">
+    <thead><tr><th>Step</th><th><span class="latency-key"><i></i>Median <i></i>p95 <i></i>Max</span><small>Log range</small></th><th>Median</th><th>p95</th><th>Max</th><th>Slow</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 async function selectRun(runId, updateUrl=true) {
@@ -555,9 +590,28 @@ function applyFilters() {
   updateUrlFromFilters();
   loadAtlas();
 }
+function applyDateFilter(changed) {
+  const start = $("filter-start");
+  const end = $("filter-end");
+  if (start.value && end.value && start.value > end.value) {
+    if (changed === "start") end.value = start.value;
+    else start.value = end.value;
+  }
+  updateClearDatesState();
+  applyFilters();
+}
+function clearDateFilters() {
+  $("filter-start").value = "";
+  $("filter-end").value = "";
+  updateClearDatesState();
+  applyFilters();
+}
+function updateClearDatesState() {
+  $("clear-dates").disabled = !$("filter-start").value && !$("filter-end").value;
+}
 function updateUrlFromFilters() { const url=new URL(location.href);url.search="";Object.entries(currentFilters()).forEach(([key,value])=>value&&url.searchParams.set(key,value));history.replaceState({},"",url); }
-function filtersFromUrl(){const p=new URLSearchParams(location.search);return{name:p.get("name")||"",type:p.get("type")||"",status:p.get("status")||"",sort:p.get("sort")||"deviation"};}
-function currentFilters(){return{name:$("filter-name").value,type:$("filter-type").value,status:$("filter-status").value,sort:$("filter-sort").value};}
+function filtersFromUrl(){const p=new URLSearchParams(location.search);return{name:p.get("name")||"",type:p.get("type")||"",start:p.get("start")||"",end:p.get("end")||"",status:p.get("status")||"",sort:p.get("sort")||"deviation"};}
+function currentFilters(){return{name:$("filter-name").value,type:$("filter-type").value,start:$("filter-start").value,end:$("filter-end").value,status:$("filter-status").value,sort:$("filter-sort").value};}
 function setLoading(on){$("loading-state").hidden=!on;}
 function renderFatal(message){$("summary-strip").innerHTML=`<div class="empty-list" style="grid-column:1/-1"><strong>Tracer could not build the execution atlas.</strong><br>${escapeHtml(message)}</div>`;}
 function showToast(message,error=false){const el=$("toast");el.textContent=message;el.classList.toggle("error",error);el.hidden=false;clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>el.hidden=true,5200);}
@@ -569,6 +623,8 @@ function formatPercent(value){return new Intl.NumberFormat(undefined,{style:"per
 function formatMs(value){const n=Number(value||0);return n>=1000?`${(n/1000).toFixed(n>=10000?1:2)} s`:`${n.toFixed(n<10?1:0)} ms`;}
 function formatDate(value){if(!value)return"Unknown time";const d=new Date(String(value).replace(" ","T")+(/[zZ]|[+-]\d\d:\d\d$/.test(value)?"":"Z"));return Number.isNaN(d.valueOf())?String(value):new Intl.DateTimeFormat(undefined,{month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(d);}
 function formatShortDate(value){if(!value)return"";const d=new Date(value);return new Intl.DateTimeFormat(undefined,{month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit"}).format(d);}
+function dateOnly(value){return value ? String(value).slice(0,10) : "";}
+function validDate(value){const date=dateOnly(value);return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";}
 function formatTime(value,millis=false){if(!value)return"—";const text=String(value).replace("T"," ");const part=text.split(" ")[1]||text;return millis?part.slice(0,12):part.slice(0,8);}
 function formatAge(seconds){if(seconds<60)return`${seconds}s`;if(seconds<3600)return`${Math.floor(seconds/60)}m`;if(seconds<86400)return`${Math.floor(seconds/3600)}h`;return`${Math.floor(seconds/86400)}d`;}
 function titleCase(value=""){return String(value).replace(/[-_]/g," ").replace(/\b\w/g,(letter)=>letter.toUpperCase());}

@@ -19,6 +19,12 @@
       <form id="filters" class="filter-bar" aria-label="Execution filters">
         <label><span>Procedure cohort</span><select id="filter-name" title="Filter the analysis to executions of one stored procedure"><option value="">All procedures · normalized steps</option></select></label>
         <label><span>Execution type</span><select id="filter-type" title="Narrow the selected procedure to one execution type"><option value="">All types</option></select></label>
+        <label class="date-filter"><span>Date range</span><span class="date-range-fields">
+          <input id="filter-start" type="date" aria-label="Start date" title="Include executions from this date" />
+          <i aria-hidden="true">to</i>
+          <input id="filter-end" type="date" aria-label="End date" title="Include executions through this date" />
+          <button id="clear-dates" type="button" aria-label="Clear date range" title="Clear date range">Clear</button>
+        </span></label>
         <label><span>Outcome</span><select id="filter-status"><option value="">All outcomes</option></select></label>
         <label><span>Order by</span><select id="filter-sort"><option value="deviation">Highest deviation</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="duration">Longest duration</option></select></label>
       </form>
@@ -68,7 +74,7 @@
             <div id="variant-list" class="variant-list"></div>
           </section>
           <section class="latency-section" aria-labelledby="latency-heading">
-            <header class="section-header"><div><h2 id="latency-heading">Per-step latency</h2><p>Median, p95 and maximum gap duration</p></div></header>
+            <header class="section-header"><div><h2 id="latency-heading">Per-step latency</h2><p>Compare median, p95, maximum and slow-run share</p></div></header>
             <div id="latency-chart" class="latency-chart"></div>
           </section>
           <div id="resize-secondary" class="resize-handle resize-handle-vertical" role="separator" tabindex="0" aria-label="Resize sequence variants and latency panels" aria-orientation="vertical" title="Drag or use arrow keys. Double-click or press Home to reset."></div>

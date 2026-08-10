@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import median
 from typing import Any, Iterable
 
@@ -78,8 +78,13 @@ def _load_runs(conn, filters: Record) -> list[Record]:
         clauses.append("start_time >= ?")
         values.append(filters["start"])
     if filters.get("end"):
-        clauses.append("start_time <= ?")
-        values.append(filters["end"])
+        end_value = str(filters["end"])
+        if _is_date_only(end_value):
+            clauses.append("start_time < ?")
+            values.append((datetime.fromisoformat(end_value) + timedelta(days=1)).date().isoformat())
+        else:
+            clauses.append("start_time <= ?")
+            values.append(end_value)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = conn.execute(
         f"""
@@ -510,6 +515,16 @@ def _parse_time(value: Any) -> datetime | None:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+def _is_date_only(value: str) -> bool:
+    if len(value) != 10:
+        return False
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
 
 
 def _percentile(values: Iterable[float], quantile: float) -> float:
