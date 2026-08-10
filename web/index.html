@@ -16,12 +16,11 @@
       <div id="freshness" class="freshness" aria-live="polite">
         <span class="status-dot"></span><strong>Loading cache</strong><span>Checking freshness…</span>
       </div>
-      <form id="filters" class="filter-bar">
-        <label><span>Procedure</span><select id="filter-name"><option value="">All procedures</option></select></label>
-        <label><span>Type</span><select id="filter-type"><option value="">All types</option></select></label>
-        <label><span>Status</span><select id="filter-status"><option value="">All statuses</option></select></label>
-        <label><span>Sort</span><select id="filter-sort"><option value="deviation">Highest deviation</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="duration">Longest duration</option></select></label>
-        <button class="button primary" type="submit">Apply</button>
+      <form id="filters" class="filter-bar" aria-label="Execution filters">
+        <label><span>Procedure cohort</span><select id="filter-name" title="Filter the analysis to executions of one stored procedure"><option value="">All procedures · normalized steps</option></select></label>
+        <label><span>Execution type</span><select id="filter-type" title="Narrow the selected procedure to one execution type"><option value="">All types</option></select></label>
+        <label><span>Outcome</span><select id="filter-status"><option value="">All outcomes</option></select></label>
+        <label><span>Order by</span><select id="filter-sort"><option value="deviation">Highest deviation</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="duration">Longest duration</option></select></label>
       </form>
       <div class="header-actions">
         <button id="export-visible" class="button" type="button" title="Export visible executions as CSV">Export</button>

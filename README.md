@@ -109,12 +109,12 @@ Tracer uses SQL only for bounded reads. All reconstruction, baselines, scoring, 
 ## How to test the product manually
 
 1. Confirm the header shows the correct cache state and watermark.
-2. Select **Error** under Status and press **Apply**.
-3. Confirm the summary shows only error executions.
+2. Select **Error** under Outcome.
+3. Confirm the summary updates immediately to show only error executions.
 4. Select an anomaly from the left inbox.
 5. Open **Explanation**, **Waterfall**, and **Raw evidence** in the inspector.
 6. Click different matrix rows and confirm the inspector changes.
-7. Filter to one procedure and type; confirm matrix columns change from normalized positions to semantic steps.
+7. Filter to one procedure and type; confirm the available types narrow to that procedure and the matrix columns change from normalized positions to semantic steps.
 8. Press **Export** and open the generated CSV.
 9. If read-only SQL is configured, press **Sync** and confirm the watermark advances or the UI reports that no new rows were found.
 

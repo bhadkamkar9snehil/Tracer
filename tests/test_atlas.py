@@ -88,6 +88,13 @@ class AtlasTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["executions"], 1)
         self.assertEqual(payload["runs"][0]["run_id"], "problem-run")
 
+    def test_filter_options_include_procedure_type_cohorts(self) -> None:
+        payload = atlas.atlas_payload(self.conn, {"limit": "50"})
+        self.assertEqual(
+            payload["filters"]["cohorts"],
+            [{"name": "Procedure_A", "type": "Production", "count": 13}],
+        )
+
     def test_missing_run_returns_none(self) -> None:
         self.assertIsNone(atlas.run_payload(self.conn, "does-not-exist"))
 

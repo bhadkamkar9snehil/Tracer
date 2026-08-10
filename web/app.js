@@ -7,7 +7,9 @@ const state = {
   selectedIndex: -1,
   activeTab: "explanation",
   filterOptionsLoaded: false,
-  matrix: { rowHeight: 27, headerHeight: 86, labelWidth: 224, cellWidth: 22 },
+  filterOptions: null,
+  requestSerial: 0,
+  matrix: { rowHeight: 29, headerHeight: 90, labelWidth: 232, cellWidth: 24 },
 };
 
 const COLORS = {
@@ -20,16 +22,16 @@ document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   bindActions();
-  hydrateFiltersFromUrl();
   await loadAtlas();
 }
 
 function bindActions() {
-  $("filters").addEventListener("submit", (event) => {
-    event.preventDefault();
-    updateUrlFromFilters();
-    loadAtlas();
+  $("filters").addEventListener("submit", (event) => event.preventDefault());
+  $("filter-name").addEventListener("change", () => {
+    refreshTypeOptions();
+    applyFilters();
   });
+  ["filter-type", "filter-status", "filter-sort"].forEach((id) => $(id).addEventListener("change", applyFilters));
   $("sync-data").addEventListener("click", syncData);
   $("export-visible").addEventListener("click", exportVisible);
   $("close-inspector").addEventListener("click", () => $("inspector-panel").classList.remove("open"));
@@ -44,22 +46,25 @@ function bindActions() {
 }
 
 async function loadAtlas() {
+  const requestSerial = ++state.requestSerial;
   setLoading(true);
   try {
     const response = await fetch(`/api/atlas${window.location.search}`, { headers: { Accept: "application/json" } });
     const payload = await response.json();
     if (!response.ok || !payload.ok) throw new Error(payload.error || `Atlas request failed (${response.status})`);
+    if (requestSerial !== state.requestSerial) return;
     state.atlas = payload;
-    if (!state.filterOptionsLoaded) populateFilterOptions(payload.filters);
+    populateFilterOptions(payload.filters);
     renderAll();
     const requestedRun = new URLSearchParams(location.search).get("run");
     const firstRun = requestedRun || payload.anomalies[0]?.run_id || payload.runs[0]?.run_id;
     if (firstRun) await selectRun(firstRun, false);
   } catch (error) {
+    if (requestSerial !== state.requestSerial) return;
     showToast(error.message, true);
     renderFatal(error.message);
   } finally {
-    setLoading(false);
+    if (requestSerial === state.requestSerial) setLoading(false);
   }
 }
 
@@ -74,19 +79,50 @@ function renderAll() {
 }
 
 function populateFilterOptions(filters) {
-  const selected = currentFilters();
-  appendOptions($("filter-name"), filters.names, "name", "count");
-  appendOptions($("filter-type"), filters.types, "type", "count");
-  filters.statuses.forEach((status) => $("filter-status").append(new Option(titleCase(status), status)));
-  $("filter-name").value = selected.name;
-  $("filter-type").value = selected.type;
-  $("filter-status").value = selected.status;
+  const selected = state.filterOptionsLoaded ? currentFilters() : filtersFromUrl();
+  state.filterOptions = filters;
+  replaceOptions($("filter-name"), "All procedures · normalized steps", filters.names, procedureOption);
+  $("filter-name").value = selected.name || "";
+  refreshTypeOptions(selected.type || "");
+  replaceOptions($("filter-status"), "All outcomes", filters.statuses.map((status) => ({ status })), (item) => ({ label: titleCase(item.status), value: item.status }));
+  $("filter-status").value = selected.status || "";
   $("filter-sort").value = selected.sort || "deviation";
   state.filterOptionsLoaded = true;
 }
 
-function appendOptions(select, items, valueKey, countKey) {
-  items.forEach((item) => select.append(new Option(`${item[valueKey]} (${formatNumber(item[countKey])})`, item[valueKey])));
+function refreshTypeOptions(preferredValue = $("filter-type").value) {
+  if (!state.filterOptions) return;
+  const procedure = $("filter-name").value;
+  let types = state.filterOptions.types;
+  if (procedure && state.filterOptions.cohorts?.length) {
+    types = state.filterOptions.cohorts
+      .filter((item) => item.name === procedure)
+      .map((item) => ({ type: item.type, count: item.count }));
+  }
+  replaceOptions($("filter-type"), procedure ? "All types in this procedure" : "All types", types, (item) => ({
+    label: `${item.type} (${formatNumber(item.count)})`,
+    value: item.type,
+    title: item.type,
+  }));
+  $("filter-type").value = [...$("filter-type").options].some((option) => option.value === preferredValue) ? preferredValue : "";
+}
+
+function replaceOptions(select, emptyLabel, items, formatItem) {
+  select.replaceChildren(new Option(emptyLabel, ""));
+  items.forEach((item) => {
+    const formatted = formatItem(item);
+    const option = new Option(formatted.label, formatted.value);
+    if (formatted.title) option.title = formatted.title;
+    select.append(option);
+  });
+}
+
+function procedureOption(item) {
+  return {
+    label: `${truncate(shortProcedure(item.name), 54)} (${formatNumber(item.count)})`,
+    value: item.name,
+    title: item.name,
+  };
 }
 
 function renderFreshness() {
@@ -138,6 +174,7 @@ function renderInbox() {
 function renderMatrix() {
   const { runs, steps, result } = state.atlas;
   const canvas = $("matrix-canvas");
+  updateMatrixMetrics();
   const { rowHeight, headerHeight, labelWidth, cellWidth } = state.matrix;
   const cssWidth = Math.max($("matrix-scroll").clientWidth, labelWidth + steps.length * cellWidth + 8);
   const cssHeight = headerHeight + runs.length * rowHeight;
@@ -157,37 +194,51 @@ function renderMatrix() {
 
 function drawMatrixHeader(ctx, steps, width) {
   const { headerHeight, labelWidth, cellWidth } = state.matrix;
+  const wide = state.matrix.rowHeight >= 34;
   ctx.fillStyle = COLORS.soft; ctx.fillRect(0,0,width,headerHeight);
   ctx.strokeStyle = COLORS.line; ctx.beginPath(); ctx.moveTo(0,headerHeight-.5);ctx.lineTo(width,headerHeight-.5);ctx.stroke();
-  ctx.fillStyle = COLORS.ink; ctx.font = "700 10px Aptos, Segoe UI"; ctx.fillText("EXECUTION / SCORE", 12, headerHeight - 12);
+  ctx.fillStyle = COLORS.ink; ctx.font = `700 ${wide ? 12 : 11}px Aptos, Segoe UI`; ctx.fillText("EXECUTION / SCORE", 14, headerHeight - 13);
   steps.forEach((step,index) => {
     const x = labelWidth + index * cellWidth + cellWidth/2;
-    ctx.save(); ctx.translate(x, headerHeight - 9); ctx.rotate(-Math.PI/3.1); ctx.fillStyle = COLORS.muted; ctx.font = "9px Cascadia Mono, Consolas"; ctx.fillText(truncate(step.label,24),0,0); ctx.restore();
+    ctx.save(); ctx.translate(x, headerHeight - 10); ctx.rotate(-Math.PI/3.1); ctx.fillStyle = COLORS.muted; ctx.font = `${wide ? 10 : 9}px Cascadia Mono, Consolas`; ctx.fillText(truncate(step.label,26),0,0); ctx.restore();
     ctx.strokeStyle = "#edf0f4"; ctx.beginPath();ctx.moveTo(labelWidth+index*cellWidth+.5,0);ctx.lineTo(labelWidth+index*cellWidth+.5,headerHeight);ctx.stroke();
   });
 }
 
 function drawMatrixRow(ctx, run, rowIndex, steps, width) {
   const { rowHeight, headerHeight, labelWidth, cellWidth } = state.matrix;
+  const wide = rowHeight >= 34;
   const y = headerHeight + rowIndex * rowHeight;
   const selected = run.run_id === state.selectedRunId;
   ctx.fillStyle = selected ? COLORS.accentSoft : rowIndex % 2 ? "#fbfcfd" : "#fff"; ctx.fillRect(0,y,width,rowHeight);
   ctx.strokeStyle = "#edf0f4";ctx.beginPath();ctx.moveTo(0,y+rowHeight-.5);ctx.lineTo(width,y+rowHeight-.5);ctx.stroke();
-  if (selected) { ctx.fillStyle = COLORS.accent;ctx.fillRect(0,y,3,rowHeight); }
-  ctx.fillStyle = COLORS.ink;ctx.font="600 9px Cascadia Mono, Consolas";ctx.fillText(`${truncate(run.type || "Unknown",16)} · ${run.run_id.slice(0,8)}`,12,y+11);
-  ctx.fillStyle = COLORS.muted;ctx.font="9px Aptos, Segoe UI";ctx.fillText(`${formatTime(run.start_time)} · ${formatMs(run.duration_ms)}`,12,y+22);
-  ctx.fillStyle = scoreColor(run.deviation_score);ctx.font="700 11px Cascadia Mono, Consolas";ctx.textAlign="right";ctx.fillText(String(run.deviation_score),labelWidth-12,y+17);ctx.textAlign="left";
+  ctx.fillStyle = COLORS.ink;ctx.font=`600 ${wide ? 11 : 10}px Cascadia Mono, Consolas`;ctx.fillText(`${truncate(run.type || "Unknown",18)} · ${run.run_id.slice(0,8)}`,14,y+(wide?13:12));
+  ctx.fillStyle = COLORS.muted;ctx.font=`${wide ? 10 : 9}px Aptos, Segoe UI`;ctx.fillText(`${formatTime(run.start_time)} · ${formatMs(run.duration_ms)}`,14,y+rowHeight-6);
+  ctx.fillStyle = scoreColor(run.deviation_score);ctx.font=`700 ${wide ? 13 : 12}px Cascadia Mono, Consolas`;ctx.textAlign="right";ctx.fillText(String(run.deviation_score),labelWidth-14,y+Math.round(rowHeight*.63));ctx.textAlign="left";
   run.cells.forEach((cell,index) => drawCell(ctx, cell, labelWidth+index*cellWidth, y, cellWidth, rowHeight));
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(34,100,229,.46)";
+    ctx.strokeRect(.5,y+.5,width-1,rowHeight-1);
+    ctx.restore();
+  }
+}
+
+function updateMatrixMetrics() {
+  if (innerWidth >= 1700) state.matrix = { rowHeight: 34, headerHeight: 102, labelWidth: 264, cellWidth: 28 };
+  else if (innerWidth >= 1321) state.matrix = { rowHeight: 30, headerHeight: 92, labelWidth: 238, cellWidth: 24 };
+  else state.matrix = { rowHeight: 29, headerHeight: 88, labelWidth: 226, cellWidth: 23 };
 }
 
 function drawCell(ctx, cell, x, y, width, height) {
   const cx=x+width/2, cy=y+height/2;
+  const scale = height >= 34 ? 1.16 : 1;
   ctx.strokeStyle="#edf0f4";ctx.beginPath();ctx.moveTo(x+.5,y);ctx.lineTo(x+.5,y+height);ctx.stroke();
-  if (cell.state === "normal") { ctx.fillStyle=COLORS.normal;ctx.beginPath();ctx.arc(cx,cy,3.1,0,Math.PI*2);ctx.fill(); }
-  else if (cell.state === "slow") { ctx.fillStyle=COLORS.slow;ctx.beginPath();ctx.arc(cx,cy,4.2,0,Math.PI*2);ctx.fill(); }
-  else if (cell.state === "missing") { ctx.save();ctx.strokeStyle=COLORS.error;ctx.setLineDash([2,2]);ctx.strokeRect(cx-4,cy-4,8,8);ctx.restore(); }
-  else if (cell.state === "unexpected") { ctx.fillStyle=COLORS.unexpected;ctx.save();ctx.translate(cx,cy);ctx.rotate(Math.PI/4);ctx.fillRect(-3.5,-3.5,7,7);ctx.restore(); }
-  else if (cell.state === "repeated") { ctx.strokeStyle=COLORS.repeated;ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.stroke();ctx.lineWidth=1; }
+  if (cell.state === "normal") { ctx.fillStyle=COLORS.normal;ctx.beginPath();ctx.arc(cx,cy,3.1*scale,0,Math.PI*2);ctx.fill(); }
+  else if (cell.state === "slow") { ctx.fillStyle=COLORS.slow;ctx.beginPath();ctx.arc(cx,cy,4.2*scale,0,Math.PI*2);ctx.fill(); }
+  else if (cell.state === "missing") { const size=4*scale;ctx.save();ctx.strokeStyle=COLORS.error;ctx.setLineDash([2,2]);ctx.strokeRect(cx-size,cy-size,size*2,size*2);ctx.restore(); }
+  else if (cell.state === "unexpected") { const size=3.5*scale;ctx.fillStyle=COLORS.unexpected;ctx.save();ctx.translate(cx,cy);ctx.rotate(Math.PI/4);ctx.fillRect(-size,-size,size*2,size*2);ctx.restore(); }
+  else if (cell.state === "repeated") { ctx.strokeStyle=COLORS.repeated;ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,4*scale,0,Math.PI*2);ctx.stroke();ctx.lineWidth=1; }
   else { ctx.fillStyle=COLORS.absent;ctx.fillRect(cx-2,cy-.5,4,1); }
 }
 
@@ -245,7 +296,7 @@ async function selectRun(runId, updateUrl=true) {
     const response=await fetch(`/api/atlas/runs/${encodeURIComponent(runId)}`);const payload=await response.json();
     if(!response.ok||!payload.ok) throw new Error(payload.error||"Run evidence unavailable");
     state.selectedRun=payload.run; renderInspector();
-    if(innerWidth<=1180) $("inspector-panel").classList.add("open");
+    if(updateUrl && innerWidth<=1320) $("inspector-panel").classList.add("open");
   } catch(error) { showToast(error.message,true); }
 }
 
@@ -290,8 +341,14 @@ function exportVisible() {
   const csv=rows.map((row)=>row.map(csvCell).join(",")).join("\r\n");const link=document.createElement("a");link.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));link.download=`tracer-executions-${new Date().toISOString().slice(0,10)}.csv`;link.click();URL.revokeObjectURL(link.href);
 }
 
-function updateUrlFromFilters() { const url=new URL(location.href);url.search="";Object.entries(currentFilters()).forEach(([key,value])=>value&&url.searchParams.set(key,value));history.pushState({},"",url); }
-function hydrateFiltersFromUrl(){const p=new URLSearchParams(location.search);["name","type","status","sort"].forEach((key)=>{const el=$(`filter-${key}`);if(el&&p.get(key))el.value=p.get(key);});}
+function applyFilters() {
+  state.selectedRunId = "";
+  state.selectedRun = null;
+  updateUrlFromFilters();
+  loadAtlas();
+}
+function updateUrlFromFilters() { const url=new URL(location.href);url.search="";Object.entries(currentFilters()).forEach(([key,value])=>value&&url.searchParams.set(key,value));history.replaceState({},"",url); }
+function filtersFromUrl(){const p=new URLSearchParams(location.search);return{name:p.get("name")||"",type:p.get("type")||"",status:p.get("status")||"",sort:p.get("sort")||"deviation"};}
 function currentFilters(){return{name:$("filter-name").value,type:$("filter-type").value,status:$("filter-status").value,sort:$("filter-sort").value};}
 function setLoading(on){$("loading-state").hidden=!on;}
 function renderFatal(message){$("summary-strip").innerHTML=`<div class="empty-list" style="grid-column:1/-1"><strong>Tracer could not build the execution atlas.</strong><br>${escapeHtml(message)}</div>`;}

@@ -442,8 +442,24 @@ def _latency_summary(items: list[Record], steps: list[Record]) -> list[Record]:
 def _filter_options(conn) -> Record:
     names = [dict(row) for row in conn.execute("SELECT name, COUNT(*) AS count FROM actual_runs WHERE name IS NOT NULL GROUP BY name ORDER BY count DESC, name")]
     types = [dict(row) for row in conn.execute("SELECT type, COUNT(*) AS count FROM actual_runs WHERE type IS NOT NULL GROUP BY type ORDER BY count DESC, type")]
+    cohorts = [
+        dict(row)
+        for row in conn.execute(
+            """SELECT name, type, COUNT(*) AS count
+               FROM actual_runs
+               WHERE name IS NOT NULL AND type IS NOT NULL
+               GROUP BY name, type
+               ORDER BY count DESC, name, type"""
+        )
+    ]
     bounds = dict(conn.execute("SELECT MIN(start_time) AS start, MAX(start_time) AS end FROM actual_runs").fetchone())
-    return {"names": names, "types": types, "statuses": ["complete", "error", "incomplete", "orphan", "unknown"], "bounds": bounds}
+    return {
+        "names": names,
+        "types": types,
+        "cohorts": cohorts,
+        "statuses": ["complete", "error", "incomplete", "orphan", "unknown"],
+        "bounds": bounds,
+    }
 
 
 def _freshness(watermark: str | None) -> Record:
