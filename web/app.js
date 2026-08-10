@@ -174,7 +174,7 @@ function renderInbox() {
 function renderMatrix() {
   const { runs, steps, result } = state.atlas;
   const canvas = $("matrix-canvas");
-  updateMatrixMetrics();
+  updateMatrixMetrics(steps.length, $("matrix-scroll").clientWidth);
   const { rowHeight, headerHeight, labelWidth, cellWidth } = state.matrix;
   const cssWidth = Math.max($("matrix-scroll").clientWidth, labelWidth + steps.length * cellWidth + 8);
   const cssHeight = headerHeight + runs.length * rowHeight;
@@ -194,27 +194,29 @@ function renderMatrix() {
 
 function drawMatrixHeader(ctx, steps, width) {
   const { headerHeight, labelWidth, cellWidth } = state.matrix;
-  const wide = state.matrix.rowHeight >= 34;
+  const extraWide = state.matrix.rowHeight >= 42;
+  const wide = state.matrix.rowHeight >= 38;
   ctx.fillStyle = COLORS.soft; ctx.fillRect(0,0,width,headerHeight);
   ctx.strokeStyle = COLORS.line; ctx.beginPath(); ctx.moveTo(0,headerHeight-.5);ctx.lineTo(width,headerHeight-.5);ctx.stroke();
-  ctx.fillStyle = COLORS.ink; ctx.font = `700 ${wide ? 12 : 11}px Aptos, Segoe UI`; ctx.fillText("EXECUTION / SCORE", 14, headerHeight - 13);
+  ctx.fillStyle = COLORS.ink; ctx.font = `700 ${extraWide ? 14 : wide ? 13 : 12}px Aptos, Segoe UI`; ctx.fillText("EXECUTION / SCORE", 16, headerHeight - 14);
   steps.forEach((step,index) => {
     const x = labelWidth + index * cellWidth + cellWidth/2;
-    ctx.save(); ctx.translate(x, headerHeight - 10); ctx.rotate(-Math.PI/3.1); ctx.fillStyle = COLORS.muted; ctx.font = `${wide ? 10 : 9}px Cascadia Mono, Consolas`; ctx.fillText(truncate(step.label,26),0,0); ctx.restore();
+    ctx.save(); ctx.translate(x, headerHeight - 11); ctx.rotate(-Math.PI/3.1); ctx.fillStyle = COLORS.muted; ctx.font = `${extraWide ? 12 : wide ? 11 : 10}px Cascadia Mono, Consolas`; ctx.fillText(truncate(step.label,30),0,0); ctx.restore();
     ctx.strokeStyle = "#edf0f4"; ctx.beginPath();ctx.moveTo(labelWidth+index*cellWidth+.5,0);ctx.lineTo(labelWidth+index*cellWidth+.5,headerHeight);ctx.stroke();
   });
 }
 
 function drawMatrixRow(ctx, run, rowIndex, steps, width) {
   const { rowHeight, headerHeight, labelWidth, cellWidth } = state.matrix;
-  const wide = rowHeight >= 34;
+  const extraWide = rowHeight >= 42;
+  const wide = rowHeight >= 38;
   const y = headerHeight + rowIndex * rowHeight;
   const selected = run.run_id === state.selectedRunId;
   ctx.fillStyle = selected ? COLORS.accentSoft : rowIndex % 2 ? "#fbfcfd" : "#fff"; ctx.fillRect(0,y,width,rowHeight);
   ctx.strokeStyle = "#edf0f4";ctx.beginPath();ctx.moveTo(0,y+rowHeight-.5);ctx.lineTo(width,y+rowHeight-.5);ctx.stroke();
-  ctx.fillStyle = COLORS.ink;ctx.font=`600 ${wide ? 11 : 10}px Cascadia Mono, Consolas`;ctx.fillText(`${truncate(run.type || "Unknown",18)} · ${run.run_id.slice(0,8)}`,14,y+(wide?13:12));
-  ctx.fillStyle = COLORS.muted;ctx.font=`${wide ? 10 : 9}px Aptos, Segoe UI`;ctx.fillText(`${formatTime(run.start_time)} · ${formatMs(run.duration_ms)}`,14,y+rowHeight-6);
-  ctx.fillStyle = scoreColor(run.deviation_score);ctx.font=`700 ${wide ? 13 : 12}px Cascadia Mono, Consolas`;ctx.textAlign="right";ctx.fillText(String(run.deviation_score),labelWidth-14,y+Math.round(rowHeight*.63));ctx.textAlign="left";
+  ctx.fillStyle = COLORS.ink;ctx.font=`600 ${extraWide ? 14 : wide ? 13 : 12}px Cascadia Mono, Consolas`;ctx.fillText(`${truncate(run.type || "Unknown",22)} · ${run.run_id.slice(0,8)}`,16,y+(extraWide?16:wide?15:14));
+  ctx.fillStyle = COLORS.muted;ctx.font=`${extraWide ? 12 : wide ? 11 : 10}px Aptos, Segoe UI`;ctx.fillText(`${formatTime(run.start_time)} · ${formatMs(run.duration_ms)}`,16,y+rowHeight-7);
+  ctx.fillStyle = scoreColor(run.deviation_score);ctx.font=`700 ${extraWide ? 16 : wide ? 15 : 14}px Cascadia Mono, Consolas`;ctx.textAlign="right";ctx.fillText(String(run.deviation_score),labelWidth-16,y+Math.round(rowHeight*.63));ctx.textAlign="left";
   run.cells.forEach((cell,index) => drawCell(ctx, cell, labelWidth+index*cellWidth, y, cellWidth, rowHeight));
   if (selected) {
     ctx.save();
@@ -224,15 +226,30 @@ function drawMatrixRow(ctx, run, rowIndex, steps, width) {
   }
 }
 
-function updateMatrixMetrics() {
-  if (innerWidth >= 1700) state.matrix = { rowHeight: 34, headerHeight: 102, labelWidth: 264, cellWidth: 28 };
-  else if (innerWidth >= 1321) state.matrix = { rowHeight: 30, headerHeight: 92, labelWidth: 238, cellWidth: 24 };
-  else state.matrix = { rowHeight: 29, headerHeight: 88, labelWidth: 226, cellWidth: 23 };
+function updateMatrixMetrics(stepCount, availableWidth) {
+  let rowHeight, headerHeight, labelWidth, minimumCellWidth, maximumCellWidth;
+  if (innerHeight <= 800 && innerWidth >= 1321) {
+    rowHeight = 34; headerHeight = 92; labelWidth = 260; minimumCellWidth = 26; maximumCellWidth = 56;
+  } else if (innerHeight <= 800) {
+    rowHeight = 32; headerHeight = 88; labelWidth = 240; minimumCellWidth = 24; maximumCellWidth = 50;
+  } else if (innerWidth >= 2200) {
+    rowHeight = 42; headerHeight = 122; labelWidth = 340; minimumCellWidth = 34; maximumCellWidth = 94;
+  } else if (innerWidth >= 1700) {
+    rowHeight = 38; headerHeight = 112; labelWidth = 300; minimumCellWidth = 30; maximumCellWidth = 80;
+  } else if (innerWidth >= 1321) {
+    rowHeight = 36; headerHeight = 106; labelWidth = 280; minimumCellWidth = 27; maximumCellWidth = 64;
+  } else {
+    rowHeight = 34; headerHeight = 100; labelWidth = 260; minimumCellWidth = 25; maximumCellWidth = 54;
+  }
+  const usableWidth = Math.max(0, availableWidth - labelWidth - 10);
+  const fittedCellWidth = stepCount ? Math.floor(usableWidth / stepCount) : minimumCellWidth;
+  const cellWidth = Math.max(minimumCellWidth, Math.min(maximumCellWidth, fittedCellWidth));
+  state.matrix = { rowHeight, headerHeight, labelWidth, cellWidth };
 }
 
 function drawCell(ctx, cell, x, y, width, height) {
   const cx=x+width/2, cy=y+height/2;
-  const scale = height >= 34 ? 1.16 : 1;
+  const scale = height >= 42 ? 1.46 : height >= 38 ? 1.32 : height >= 34 ? 1.16 : 1;
   ctx.strokeStyle="#edf0f4";ctx.beginPath();ctx.moveTo(x+.5,y);ctx.lineTo(x+.5,y+height);ctx.stroke();
   if (cell.state === "normal") { ctx.fillStyle=COLORS.normal;ctx.beginPath();ctx.arc(cx,cy,3.1*scale,0,Math.PI*2);ctx.fill(); }
   else if (cell.state === "slow") { ctx.fillStyle=COLORS.slow;ctx.beginPath();ctx.arc(cx,cy,4.2*scale,0,Math.PI*2);ctx.fill(); }
