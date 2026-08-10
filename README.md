@@ -14,6 +14,7 @@ The application is intentionally cache-first. It remains usable when SQL Server 
 - Per-step median, p95, p99, and maximum latency analysis.
 - Execution, deviation, and failure density over time.
 - Filters for procedure, type, status, and ordering.
+- Resizable inbox, evidence, matrix, and bottom-analysis panels with per-browser layout persistence.
 - CSV export of the currently visible executions.
 - Explicit, bounded SQL synchronization into a local SQLite cache.
 - Responsive layouts for small laptops and desktop monitors. The supported minimum width is 1024 pixels; mobile phones are not a target surface.
@@ -115,8 +116,9 @@ Tracer uses SQL only for bounded reads. All reconstruction, baselines, scoring, 
 5. Open **Explanation**, **Waterfall**, and **Raw evidence** in the inspector.
 6. Click different matrix rows and confirm the inspector changes.
 7. Filter to one procedure and type; confirm the available types narrow to that procedure and the matrix columns change from normalized positions to semantic steps.
-8. Press **Export** and open the generated CSV.
-9. If read-only SQL is configured, press **Sync** and confirm the watermark advances or the UI reports that no new rows were found.
+8. Drag each panel divider, reload the page, and confirm the browser restores the chosen layout. Use arrow keys while a divider is focused for precise adjustment; press **Home** or double-click to reset it.
+9. Press **Export** and open the generated CSV.
+10. If read-only SQL is configured, press **Sync** and confirm the watermark advances or the UI reports that no new rows were found.
 
 ## Automated validation
 

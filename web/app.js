@@ -1,4 +1,11 @@
 const $ = (id) => document.getElementById(id);
+const LAYOUT_STORAGE_KEY = "tracer.layout.v1";
+const LAYOUT_PROPERTIES = {
+  left: "--left-panel-width",
+  right: "--right-panel-width",
+  bottom: "--bottom-panel-height",
+  split: "--bottom-left-share",
+};
 
 const state = {
   atlas: null,
@@ -9,6 +16,7 @@ const state = {
   filterOptionsLoaded: false,
   filterOptions: null,
   requestSerial: 0,
+  layout: { left: null, right: null, bottom: null, split: null },
   matrix: { rowHeight: 29, headerHeight: 90, labelWidth: 232, cellWidth: 24 },
 };
 
@@ -21,7 +29,9 @@ const COLORS = {
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  restoreLayout();
   bindActions();
+  bindPanelResizers();
   await loadAtlas();
 }
 
@@ -39,10 +49,191 @@ function bindActions() {
   $("matrix-canvas").addEventListener("mousemove", showMatrixTooltip);
   $("matrix-canvas").addEventListener("mouseleave", () => { $("matrix-tooltip").hidden = true; });
   $("matrix-canvas").addEventListener("keydown", navigateMatrix);
-  window.addEventListener("resize", debounce(() => state.atlas && renderMatrix(), 100));
+  window.addEventListener("resize", debounce(() => {
+    applyLayoutState();
+    if (state.atlas) renderMatrix();
+  }, 100));
   document.querySelectorAll(".inspector-tabs button").forEach((button) => {
     button.addEventListener("click", () => activateInspectorTab(button.dataset.tab));
   });
+}
+
+function restoreLayout() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) || "null");
+    if (saved?.version === 1) {
+      ["left", "right", "bottom", "split"].forEach((key) => {
+        if (Number.isFinite(saved[key])) state.layout[key] = saved[key];
+      });
+    }
+  } catch {
+    state.layout = { left: null, right: null, bottom: null, split: null };
+  }
+  applyLayoutState();
+}
+
+function bindPanelResizers() {
+  const resizers = [
+    ["resize-inbox", "left"],
+    ["resize-inspector", "right"],
+    ["resize-bottom", "bottom"],
+    ["resize-secondary", "split"],
+  ];
+  resizers.forEach(([id, key]) => {
+    const handle = $(id);
+    handle.addEventListener("pointerdown", (event) => beginPanelResize(event, handle, key));
+    handle.addEventListener("keydown", (event) => resizePanelWithKeyboard(event, key));
+    handle.addEventListener("dblclick", () => resetLayoutDimension(key));
+  });
+  updateResizeHandleValues(applyLayoutState());
+}
+
+function beginPanelResize(event, handle, key) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  handle.classList.add("dragging");
+  document.body.classList.add(key === "bottom" ? "resizing-rows" : "resizing-columns");
+
+  const move = (pointerEvent) => {
+    state.layout[key] = layoutValueFromPointer(key, pointerEvent);
+    const applied = applyLayoutState();
+    state.layout[key] = applied[key];
+  };
+  const finish = () => {
+    handle.classList.remove("dragging");
+    document.body.classList.remove("resizing-columns", "resizing-rows");
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", finish);
+    handle.removeEventListener("pointercancel", finish);
+    saveLayout();
+    if (state.atlas) renderMatrix();
+  };
+
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+}
+
+function layoutValueFromPointer(key, event) {
+  if (key === "left") {
+    const rect = document.querySelector(".app-layout").getBoundingClientRect();
+    return event.clientX - rect.left;
+  }
+  if (key === "right") {
+    const rect = document.querySelector(".app-layout").getBoundingClientRect();
+    return rect.right - event.clientX;
+  }
+  if (key === "bottom") {
+    const rect = document.querySelector(".analysis-workspace").getBoundingClientRect();
+    return rect.bottom - event.clientY;
+  }
+  const rect = document.querySelector(".secondary-analysis").getBoundingClientRect();
+  return rect.width ? (event.clientX - rect.left) / rect.width : .4;
+}
+
+function resizePanelWithKeyboard(event, key) {
+  if (event.key === "Home") {
+    event.preventDefault();
+    resetLayoutDimension(key);
+    return;
+  }
+  const applicable = key === "bottom"
+    ? ["ArrowUp", "ArrowDown"]
+    : ["ArrowLeft", "ArrowRight"];
+  if (!applicable.includes(event.key)) return;
+  event.preventDefault();
+  const applied = applyLayoutState();
+  const pixelStep = event.shiftKey ? 40 : 16;
+  const ratioStep = event.shiftKey ? .08 : .03;
+  let next = applied[key];
+  if (key === "left") next += event.key === "ArrowRight" ? pixelStep : -pixelStep;
+  else if (key === "right") next += event.key === "ArrowLeft" ? pixelStep : -pixelStep;
+  else if (key === "bottom") next += event.key === "ArrowUp" ? pixelStep : -pixelStep;
+  else next += event.key === "ArrowRight" ? ratioStep : -ratioStep;
+  state.layout[key] = next;
+  const constrained = applyLayoutState();
+  state.layout[key] = constrained[key];
+  saveLayout();
+  if (state.atlas) renderMatrix();
+}
+
+function resetLayoutDimension(key) {
+  state.layout[key] = null;
+  const applied = applyLayoutState();
+  updateResizeHandleValues(applied);
+  saveLayout();
+  if (state.atlas) renderMatrix();
+}
+
+function applyLayoutState() {
+  const root = document.documentElement;
+  Object.values(LAYOUT_PROPERTIES).forEach((property) => root.style.removeProperty(property));
+  const styles = getComputedStyle(root);
+  const defaults = {
+    left: parseFloat(styles.getPropertyValue(LAYOUT_PROPERTIES.left)) || 280,
+    right: parseFloat(styles.getPropertyValue(LAYOUT_PROPERTIES.right)) || 430,
+    bottom: parseFloat(styles.getPropertyValue(LAYOUT_PROPERTIES.bottom)) || 290,
+    split: (parseFloat(styles.getPropertyValue(LAYOUT_PROPERTIES.split)) || 40) / 100,
+  };
+  const app = document.querySelector(".app-layout");
+  const workspace = document.querySelector(".analysis-workspace");
+  const secondary = document.querySelector(".secondary-analysis");
+  if (!app || !workspace || !secondary) return defaults;
+
+  const compact = innerWidth <= 1320;
+  const minimumCenter = compact ? 620 : innerWidth >= 2200 ? 900 : innerWidth >= 1700 ? 680 : 560;
+  const appWidth = app.clientWidth || innerWidth;
+  const minimumLeft = 220;
+  const minimumRight = compact ? 320 : 340;
+  const maximumLeft = Math.max(minimumLeft, Math.min(480, appWidth - minimumCenter - (compact ? 0 : minimumRight)));
+  const left = clamp(state.layout.left ?? defaults.left, minimumLeft, maximumLeft);
+  const maximumRight = compact
+    ? Math.max(minimumRight, Math.min(900, innerWidth - 48))
+    : Math.max(minimumRight, Math.min(900, appWidth - minimumCenter - left));
+  const right = clamp(state.layout.right ?? defaults.right, minimumRight, maximumRight);
+
+  const topHeight = $("summary-strip").offsetHeight + document.querySelector(".density-band").offsetHeight;
+  const minimumMatrix = innerHeight <= 800 ? 250 : innerWidth >= 2200 ? 300 : 280;
+  const maximumBottom = Math.max(150, workspace.clientHeight - topHeight - minimumMatrix);
+  const bottom = clamp(state.layout.bottom ?? defaults.bottom, 150, maximumBottom);
+
+  const secondaryWidth = Math.max(1, secondary.clientWidth);
+  const minimumSecondary = Math.min(240, secondaryWidth / 2);
+  const minimumShare = minimumSecondary / secondaryWidth;
+  const split = clamp(state.layout.split ?? defaults.split, minimumShare, 1 - minimumShare);
+
+  const applied = { left, right, bottom, split };
+  Object.entries(applied).forEach(([key, value]) => {
+    if (state.layout[key] == null) return;
+    root.style.setProperty(LAYOUT_PROPERTIES[key], key === "split" ? `${value * 100}%` : `${Math.round(value)}px`);
+  });
+  updateResizeHandleValues(applied);
+  return applied;
+}
+
+function updateResizeHandleValues(layout) {
+  if (!layout || !$("resize-inbox")) return;
+  const values = {
+    "resize-inbox": [Math.round(layout.left), 220, 480],
+    "resize-inspector": [Math.round(layout.right), 320, 900],
+    "resize-bottom": [Math.round(layout.bottom), 150, 700],
+    "resize-secondary": [Math.round(layout.split * 100), 0, 100],
+  };
+  Object.entries(values).forEach(([id, [now, min, max]]) => {
+    const handle = $(id);
+    handle.setAttribute("aria-valuenow", now);
+    handle.setAttribute("aria-valuemin", min);
+    handle.setAttribute("aria-valuemax", max);
+  });
+}
+
+function saveLayout() {
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ version: 1, ...state.layout }));
+  } catch {
+    showToast("This browser could not save the panel layout.", true);
+  }
 }
 
 async function loadAtlas() {
@@ -384,4 +575,5 @@ function titleCase(value=""){return String(value).replace(/[-_]/g," ").replace(/
 function truncate(value,length){return String(value).length>length?`${String(value).slice(0,length-1)}…`:String(value);}
 function escapeHtml(value){return String(value??"").replace(/[&<>'"]/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));}
 function csvCell(value){const text=String(value??"");return /[",\r\n]/.test(text)?`"${text.replaceAll('"','""')}"`:text;}
+function clamp(value,min,max){return Math.max(min,Math.min(max,Number(value)));}
 function debounce(fn,wait){let timer;return(...args)=>{clearTimeout(timer);timer=setTimeout(()=>fn(...args),wait);};}
