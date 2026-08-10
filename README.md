@@ -7,13 +7,13 @@ The application is intentionally cache-first. It remains usable when SQL Server 
 ## What it provides
 
 - Run-by-step deviation matrix for hundreds of executions at once.
-- Ranked anomaly inbox with plain-language explanations.
+- Sortable run inbox with plain-language explanations and exact matrix-row focus.
 - Expected-versus-actual waterfall for a selected execution.
 - Raw event evidence, including sequence numbers and execution query.
-- Sequence-variant frequency analysis.
+- Clickable sequence-variant frequency analysis that filters to an exact execution path.
 - Per-step median, p95, p99, and maximum latency analysis.
 - Execution, deviation, and failure density over time.
-- Filters for inclusive date range, procedure, type, status, and ordering.
+- Filters for inclusive date range, procedure, type, status, KPI signal, exact sequence variant, and run ordering.
 - Resizable inbox, evidence, matrix, and bottom-analysis panels with per-browser layout persistence.
 - CSV export of the currently visible executions.
 - Explicit, bounded SQL synchronization into a local SQLite cache.
@@ -110,15 +110,17 @@ Tracer uses SQL only for bounded reads. All reconstruction, baselines, scoring, 
 ## How to test the product manually
 
 1. Confirm the header shows the correct cache state and watermark.
-2. Select **Error** under Outcome.
-3. Confirm the summary updates immediately to show only error executions.
-4. Select an anomaly from the left inbox.
-5. Open **Explanation**, **Waterfall**, and **Raw evidence** in the inspector.
-6. Click different matrix rows and confirm the inspector changes.
-7. Filter to one procedure and type; confirm the available types narrow to that procedure and the matrix columns change from normalized positions to semantic steps.
-8. Drag each panel divider, reload the page, and confirm the browser restores the chosen layout. Use arrow keys while a divider is focused for precise adjustment; press **Home** or double-click to reset it.
-9. Press **Export** and open the generated CSV.
-10. If read-only SQL is configured, press **Sync** and confirm the watermark advances or the UI reports that no new rows were found.
+2. Select **Error** under Outcome and confirm the four KPI counts recalculate for that outcome.
+3. Click **Deviated**, **Failed**, or **Slow** to filter every analysis panel to that KPI population; click **Executions** to show all matching runs.
+4. Change **Sort runs by** and confirm it changes the run order without changing the KPI population.
+5. Select a run from the left inbox. Confirm its exact matrix row is selected and brought into view while the matrix header and page remain fixed.
+6. Click a **Sequence variants** row to restrict the inbox, matrix, density, and latency analysis to runs with that exact path; use **Clear variant** to return to the KPI population.
+7. Open **Explanation**, **Waterfall**, and **Raw evidence** in the inspector.
+8. Click different matrix rows and confirm the inspector changes.
+9. Filter to one procedure and type; confirm the available types narrow to that procedure and the matrix columns change from normalized positions to semantic steps.
+10. Drag each panel divider, reload the page, and confirm the browser restores the chosen layout. Use arrow keys while a divider is focused for precise adjustment; press **Home** or double-click to reset it.
+11. Press **Export** and open the generated CSV.
+12. If read-only SQL is configured, press **Sync** and confirm the watermark advances or the UI reports that no new rows were found.
 
 ## Automated validation
 
@@ -150,12 +152,14 @@ Invoke-RestMethod "http://127.0.0.1:8765/api/atlas?status=error&sort=deviation"
 Supported `/api/atlas` query parameters:
 
 ```text
-name, type, status, start, end, sort, limit
+name, type, status, start, end, sort, limit, signal, variant, run
 ```
 
 `start` and `end` accept `YYYY-MM-DD`; both selected calendar days are inclusive.
 
-`limit` is bounded to 20–300 matrix rows. Analysis still covers all matching runs up to the backend safety limit; only the interactive matrix is capped.
+`signal` accepts `all`, `deviated`, `failed`, or `slow`. `variant` is the stable ID returned by the sequence-variant contract. `run` focuses a run and guarantees its inclusion in the capped matrix window when it belongs to the active filters.
+
+`limit` is bounded to 20–300 matrix rows. Analysis still covers all matching runs up to the backend safety limit; only the interactive matrix is capped. The run inbox reports both shown and total counts when its separate safety cap is reached.
 
 ## Architecture
 

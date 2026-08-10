@@ -11,6 +11,7 @@ from typing import Any, Iterable
 Record = dict[str, Any]
 MAX_RUNS = 5000
 MAX_MATRIX_RUNS = 300
+MAX_INBOX_RUNS = 500
 MAX_STEPS = 80
 
 
@@ -20,16 +21,32 @@ def atlas_payload(conn, filters: Record | None = None) -> Record:
     runs = _load_runs(conn, filters)
     events_by_run = _load_events(conn, [run["run_id"] for run in runs])
     cohorts = _build_cohorts(runs, events_by_run)
-    analyses = [
+    base_analyses = [
         _analyse_run(run, events_by_run.get(run["run_id"], []), cohorts[(run["name"], run["type"])])
         for run in runs
+    ]
+
+    signal = str(filters.get("signal") or "deviated")
+    if signal not in {"all", "deviated", "failed", "slow"}:
+        signal = "deviated"
+    signal_analyses = _filter_signal(base_analyses, signal)
+    variants = _variants(signal_analyses)
+    variant_id = str(filters.get("variant") or "")
+    analyses = [
+        item for item in signal_analyses
+        if not variant_id or _variant_id(item["actual"]) == variant_id
     ]
 
     sort_name = str(filters.get("sort") or "deviation")
     analyses.sort(key=_sort_key(sort_name), reverse=sort_name != "oldest")
     matrix_limit = _bounded_int(filters.get("limit"), 160, 20, MAX_MATRIX_RUNS)
     matrix_runs = analyses[:matrix_limit]
+    focused_run_id = str(filters.get("run") or "")
+    focused_analysis = next((item for item in analyses if item["run_id"] == focused_run_id), None)
+    if focused_analysis and all(item["run_id"] != focused_run_id for item in matrix_runs):
+        matrix_runs = [*matrix_runs[:-1], focused_analysis] if matrix_runs else [focused_analysis]
     steps = _matrix_steps(matrix_runs, cohorts)
+    inbox = [_inbox_item(item) for item in analyses[:MAX_INBOX_RUNS]]
 
     watermark = conn.execute("SELECT MAX(entry_datetime) AS value FROM trace_events").fetchone()["value"]
     return {
@@ -37,18 +54,22 @@ def atlas_payload(conn, filters: Record | None = None) -> Record:
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "freshness": _freshness(watermark),
         "filters": _filter_options(conn),
-        "summary": _summary(analyses),
+        "summary": _summary(base_analyses),
         "density": _density(analyses),
         "steps": steps,
         "runs": [_matrix_run(item, steps) for item in matrix_runs],
-        "anomalies": [_inbox_item(item) for item in analyses if item["deviation_score"] > 0][:80],
-        "variants": _variants(analyses),
+        "inbox": inbox,
+        "variants": variants,
         "latency": _latency_summary(analyses, steps),
         "result": {
             "total_matching": len(analyses),
             "shown": len(matrix_runs),
+            "inbox_shown": len(inbox),
             "truncated": len(analyses) > len(matrix_runs),
             "sort": sort_name,
+            "signal": signal,
+            "variant": variant_id,
+            "focused_run_included": bool(focused_analysis),
             "matrix_mode": "normalized" if steps and steps[0]["key"].startswith("ordinal:") else "semantic",
         },
     }
@@ -340,15 +361,16 @@ def _run_detail(item: Record, cohort: Record) -> Record:
 
 
 def _inbox_item(item: Record) -> Record:
+    score = item["deviation_score"]
     return {
         "run_id": item["run_id"],
         "name": item["name"],
         "type": item["type"],
         "start_time": item["start_time"],
         "status": item["status"],
-        "deviation_score": item["deviation_score"],
-        "reason": item["explanations"][0]["text"] if item["explanations"] else "Deviation detected.",
-        "severity": "high" if item["deviation_score"] >= 40 else "medium" if item["deviation_score"] >= 18 else "low",
+        "deviation_score": score,
+        "reason": item["explanations"][0]["text"] if item["explanations"] else "No explainable deviation detected.",
+        "severity": "high" if score >= 40 else "medium" if score >= 18 else "low" if score > 0 else "normal",
     }
 
 
@@ -396,7 +418,7 @@ def _variants(items: list[Record]) -> list[Record]:
         avg_score = sum(item["deviation_score"] for item in matching) / max(1, len(matching))
         output.append(
             {
-                "id": hashlib.sha1("|".join(sequence).encode("utf-8")).hexdigest()[:10],
+                "id": _variant_id(sequence),
                 "count": count,
                 "rate": round(count / total, 4),
                 "step_count": len(sequence),
@@ -405,6 +427,20 @@ def _variants(items: list[Record]) -> list[Record]:
             }
         )
     return output
+
+
+def _variant_id(sequence: Iterable[str]) -> str:
+    return hashlib.sha1("|".join(sequence).encode("utf-8")).hexdigest()[:10]
+
+
+def _filter_signal(items: list[Record], signal: str) -> list[Record]:
+    if signal == "all":
+        return list(items)
+    if signal == "failed":
+        return [item for item in items if item["status"] == "error"]
+    if signal == "slow":
+        return [item for item in items if item["slow"]]
+    return [item for item in items if item["deviation_score"] > 0]
 
 
 def _state_symbol(item: Record, step: str) -> str:

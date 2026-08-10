@@ -86,7 +86,7 @@ class TracerServer(SimpleHTTPRequestHandler):
                 params = {key: first(query, key, "") for key in ("name", "type", "q", "limit", "start", "end", "sr_no", "sub_seq_no", "step", "run_id")}
                 self.json_response(playback(conn, params))
             elif path == "/api/atlas":
-                params = {key: first(query, key, "") for key in ("name", "type", "status", "start", "end", "sort", "limit")}
+                params = {key: first(query, key, "") for key in ("name", "type", "status", "start", "end", "sort", "limit", "signal", "variant", "run")}
                 self.json_response(atlas.atlas_payload(conn, params))
             elif path.startswith("/api/atlas/runs/"):
                 run_id = unquote(path.split("/api/atlas/runs/", 1)[1])

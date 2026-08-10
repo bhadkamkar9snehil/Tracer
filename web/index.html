@@ -26,7 +26,7 @@
           <button id="clear-dates" type="button" aria-label="Clear date range" title="Clear date range">Clear</button>
         </span></label>
         <label><span>Outcome</span><select id="filter-status"><option value="">All outcomes</option></select></label>
-        <label><span>Order by</span><select id="filter-sort"><option value="deviation">Highest deviation</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="duration">Longest duration</option></select></label>
+        <label><span>Sort runs by</span><select id="filter-sort"><option value="deviation">Highest deviation</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="duration">Longest duration</option></select></label>
       </form>
       <div class="header-actions">
         <button id="export-visible" class="button" type="button" title="Export visible executions as CSV">Export</button>
@@ -37,7 +37,7 @@
     <main class="app-layout">
       <aside class="inbox-panel" aria-labelledby="inbox-heading">
         <header class="panel-heading">
-          <div><h1 id="inbox-heading">Anomaly inbox</h1><p>Ranked by explainable deviation</p></div>
+          <div><h1 id="inbox-heading">Run inbox</h1><p id="inbox-subtitle">Deviated runs · highest deviation</p></div>
           <strong id="inbox-count">—</strong>
         </header>
         <div class="inbox-legend" aria-label="Severity legend"><span><i class="high"></i>High</span><span><i class="medium"></i>Medium</span><span><i class="low"></i>Low</span></div>
@@ -61,6 +61,7 @@
             </div>
           </header>
           <div id="matrix-scroll" class="matrix-scroll">
+            <canvas id="matrix-header-canvas" aria-hidden="true"></canvas>
             <canvas id="matrix-canvas" tabindex="0" role="img" aria-describedby="matrix-subtitle matrix-selection"></canvas>
           </div>
           <footer class="matrix-footer"><span id="matrix-result">Loading executions…</span><span>Click a row for its evidence</span></footer>
@@ -70,7 +71,7 @@
 
         <div class="secondary-analysis">
           <section class="variants-section" aria-labelledby="variants-heading">
-            <header class="section-header"><div><h2 id="variants-heading">Sequence variants</h2><p>Dominant and rare execution fingerprints</p></div></header>
+            <header class="section-header"><div><h2 id="variants-heading">Sequence variants</h2><p>Exact paths in the current KPI scope · click to filter</p></div><button id="clear-variant" class="section-action" type="button" hidden>Clear variant</button></header>
             <div id="variant-list" class="variant-list"></div>
           </section>
           <section class="latency-section" aria-labelledby="latency-heading">

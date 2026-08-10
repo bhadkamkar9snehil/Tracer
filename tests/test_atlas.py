@@ -70,6 +70,42 @@ class AtlasTests(unittest.TestCase):
         self.assertGreaterEqual(problem["deviation_score"], 60)
         self.assertIn("error", problem["primary_reason"].lower())
         self.assertGreaterEqual(payload["summary"]["deviated"], 1)
+        self.assertEqual(payload["result"]["signal"], "deviated")
+        self.assertEqual(payload["result"]["total_matching"], 1)
+        self.assertEqual(payload["inbox"][0]["run_id"], "problem-run")
+
+    def test_kpi_signal_filters_the_coordinated_run_scope(self) -> None:
+        all_runs = atlas.atlas_payload(self.conn, {"signal": "all", "limit": "50"})
+        failed_runs = atlas.atlas_payload(self.conn, {"signal": "failed", "limit": "50"})
+        self.assertEqual(all_runs["result"]["total_matching"], 13)
+        self.assertEqual(failed_runs["result"]["total_matching"], 1)
+        self.assertEqual(failed_runs["runs"][0]["run_id"], "problem-run")
+
+    def test_sequence_variant_filters_runs_with_the_exact_path(self) -> None:
+        variant_id = atlas._variant_id(["1:1", "1:4", "1:5"])
+        payload = atlas.atlas_payload(
+            self.conn,
+            {"signal": "all", "variant": variant_id, "limit": "50"},
+        )
+        self.assertEqual(payload["result"]["total_matching"], 1)
+        self.assertEqual(payload["runs"][0]["run_id"], "problem-run")
+        self.assertTrue(any(item["id"] == variant_id for item in payload["variants"]))
+
+    def test_focused_inbox_run_is_forced_into_the_matrix_window(self) -> None:
+        base = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        for index in range(15):
+            self._add_run(
+                f"additional-{index}",
+                base + timedelta(minutes=index),
+                [(1, "Entered", 0), (2, "Validate", 10), (3, "Completed", 20)],
+            )
+        payload = atlas.atlas_payload(
+            self.conn,
+            {"signal": "all", "sort": "duration", "limit": "20", "run": "normal-0"},
+        )
+        self.assertEqual(payload["result"]["shown"], 20)
+        self.assertTrue(payload["result"]["focused_run_included"])
+        self.assertIn("normal-0", {run["run_id"] for run in payload["runs"]})
 
     def test_run_detail_compares_expected_and_actual(self) -> None:
         payload = atlas.run_payload(self.conn, "problem-run")

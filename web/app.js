@@ -13,6 +13,8 @@ const state = {
   selectedRun: null,
   selectedIndex: -1,
   activeTab: "explanation",
+  signalFilter: "deviated",
+  variantFilter: "",
   filterOptionsLoaded: false,
   filterOptions: null,
   requestSerial: 0,
@@ -29,6 +31,9 @@ const COLORS = {
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  const initialFilters = filtersFromUrl();
+  state.signalFilter = initialFilters.signal;
+  state.variantFilter = initialFilters.variant;
   restoreLayout();
   bindActions();
   bindPanelResizers();
@@ -41,10 +46,12 @@ function bindActions() {
     refreshTypeOptions();
     applyFilters();
   });
-  ["filter-type", "filter-status", "filter-sort"].forEach((id) => $(id).addEventListener("change", applyFilters));
+  ["filter-type", "filter-status"].forEach((id) => $(id).addEventListener("change", () => applyFilters()));
+  $("filter-sort").addEventListener("change", () => applyFilters(false));
   $("filter-start").addEventListener("change", () => applyDateFilter("start"));
   $("filter-end").addEventListener("change", () => applyDateFilter("end"));
   $("clear-dates").addEventListener("click", clearDateFilters);
+  $("clear-variant").addEventListener("click", () => applyVariantFilter(""));
   $("sync-data").addEventListener("click", syncData);
   $("export-visible").addEventListener("click", exportVisible);
   $("close-inspector").addEventListener("click", () => $("inspector-panel").classList.remove("open"));
@@ -251,8 +258,9 @@ async function loadAtlas() {
     populateFilterOptions(payload.filters);
     renderAll();
     const requestedRun = new URLSearchParams(location.search).get("run");
-    const firstRun = requestedRun || payload.anomalies[0]?.run_id || payload.runs[0]?.run_id;
+    const firstRun = payload.result.focused_run_included ? requestedRun : payload.inbox[0]?.run_id || payload.runs[0]?.run_id;
     if (firstRun) await selectRun(firstRun, false);
+    else clearInspector();
   } catch (error) {
     if (requestSerial !== state.requestSerial) return;
     showToast(error.message, true);
@@ -281,6 +289,8 @@ function populateFilterOptions(filters) {
   replaceOptions($("filter-status"), "All outcomes", filters.statuses.map((status) => ({ status })), (item) => ({ label: titleCase(item.status), value: item.status }));
   $("filter-status").value = selected.status || "";
   $("filter-sort").value = selected.sort || "deviation";
+  state.signalFilter = selected.signal || "deviated";
+  state.variantFilter = selected.variant || "";
   const firstDate = dateOnly(filters.bounds?.start);
   const lastDate = dateOnly(filters.bounds?.end);
   [$("filter-start"), $("filter-end")].forEach((input) => {
@@ -339,12 +349,13 @@ function renderFreshness() {
 function renderSummary() {
   const s = state.atlas.summary;
   const metrics = [
-    ["Executions", s.executions, "matching runs"],
-    ["Deviated", s.deviated, formatPercent(s.deviation_rate)],
-    ["Failed", s.failed, formatPercent(s.failure_rate)],
-    ["Slow", s.slow, `${formatPercent(s.slow_rate)} · p95 ${formatMs(s.p95_duration_ms)}`],
+    ["all", "Executions", s.executions, "all matching runs"],
+    ["deviated", "Deviated", s.deviated, formatPercent(s.deviation_rate)],
+    ["failed", "Failed", s.failed, formatPercent(s.failure_rate)],
+    ["slow", "Slow", s.slow, `${formatPercent(s.slow_rate)} · p95 ${formatMs(s.p95_duration_ms)}`],
   ];
-  $("summary-strip").innerHTML = metrics.map(([label, value, note]) => `<div class="metric"><span>${label}</span><strong>${formatNumber(value)}</strong><small>${note}</small></div>`).join("");
+  $("summary-strip").innerHTML = metrics.map(([signal, label, value, note]) => `<button class="metric ${signal === state.signalFilter ? "active" : ""}" type="button" data-signal="${signal}" aria-pressed="${signal === state.signalFilter}" title="Show ${label.toLowerCase()} runs in every analysis panel"><span>${label}</span><strong>${formatNumber(value)}</strong><small>${note}</small></button>`).join("");
+  document.querySelectorAll(".metric").forEach((button) => button.addEventListener("click", () => applySignalFilter(button.dataset.signal)));
 }
 
 function renderDensity() {
@@ -363,36 +374,47 @@ function renderDensity() {
 }
 
 function renderInbox() {
-  const anomalies = state.atlas.anomalies;
-  $("inbox-count").textContent = formatNumber(state.atlas.summary.deviated);
-  $("anomaly-list").innerHTML = anomalies.length ? anomalies.map((item) => `
+  const items = state.atlas.inbox;
+  const { inbox_shown: shown, total_matching: total, signal } = state.atlas.result;
+  $("inbox-count").textContent = shown < total ? `${formatNumber(shown)}/${formatNumber(total)}` : formatNumber(total);
+  $("inbox-subtitle").textContent = `${signalLabel(signal)} runs · ${$("filter-sort").selectedOptions[0]?.textContent || "current order"}`;
+  $("anomaly-list").innerHTML = items.length ? items.map((item) => `
     <button class="anomaly-item ${item.run_id === state.selectedRunId ? "active" : ""}" type="button" role="listitem" data-run="${item.run_id}">
       <i class="severity-icon ${item.severity}" aria-label="${item.severity} severity"></i>
       <span class="anomaly-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(shortProcedure(item.name))} · ${escapeHtml(item.type || "Unknown")}</strong><p>${escapeHtml(item.reason)}</p><time>${escapeHtml(formatDate(item.start_time))}</time></span>
-      <span class="anomaly-score">${item.deviation_score}</span>
-    </button>`).join("") : `<div class="empty-list">No explainable deviations match the current filters.</div>`;
+      <span class="anomaly-score ${item.severity}">${item.deviation_score}</span>
+    </button>`).join("") : `<div class="empty-list">No ${signalLabel(signal).toLowerCase()} runs match the current filters.</div>`;
   document.querySelectorAll(".anomaly-item").forEach((button) => button.addEventListener("click", () => selectRun(button.dataset.run)));
 }
 
 function renderMatrix() {
   const { runs, steps, result } = state.atlas;
+  const headerCanvas = $("matrix-header-canvas");
   const canvas = $("matrix-canvas");
   updateMatrixMetrics(steps.length, $("matrix-scroll").clientWidth);
   const { rowHeight, headerHeight, labelWidth, cellWidth } = state.matrix;
   const cssWidth = Math.max($("matrix-scroll").clientWidth, labelWidth + steps.length * cellWidth + 8);
-  const cssHeight = headerHeight + runs.length * rowHeight;
+  const cssHeight = Math.max(1, runs.length * rowHeight);
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.ceil(cssWidth * ratio); canvas.height = Math.ceil(cssHeight * ratio);
-  canvas.style.width = `${cssWidth}px`; canvas.style.height = `${cssHeight}px`;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(ratio, ratio);
+  const headerCtx = prepareCanvas(headerCanvas, cssWidth, headerHeight, ratio);
+  const ctx = prepareCanvas(canvas, cssWidth, cssHeight, ratio);
   ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cssWidth,cssHeight);
-  drawMatrixHeader(ctx, steps, cssWidth);
+  drawMatrixHeader(headerCtx, steps, cssWidth);
   runs.forEach((run, rowIndex) => drawMatrixRow(ctx, run, rowIndex, steps, cssWidth));
-  $("matrix-result").textContent = `Showing ${formatNumber(result.shown)} of ${formatNumber(result.total_matching)} executions${result.truncated ? " · limited for interactive inspection" : ""}`;
+  $("matrix-result").textContent = `Showing ${formatNumber(result.shown)} of ${formatNumber(result.total_matching)} ${signalLabel(result.signal).toLowerCase()} runs${result.truncated ? " · selected run is always included" : ""}`;
   $("matrix-subtitle").textContent = result.matrix_mode === "normalized"
     ? "Rows are executions across multiple cohorts. Columns are normalized ordinal positions; filter to one procedure and type for semantic step labels."
     : "Rows are comparable executions. Columns are semantic trace steps from the dominant cohort path.";
+}
+
+function prepareCanvas(canvas, width, height, ratio) {
+  canvas.width = Math.ceil(width * ratio);
+  canvas.height = Math.ceil(height * ratio);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  return ctx;
 }
 
 function drawMatrixHeader(ctx, steps, width) {
@@ -410,10 +432,10 @@ function drawMatrixHeader(ctx, steps, width) {
 }
 
 function drawMatrixRow(ctx, run, rowIndex, steps, width) {
-  const { rowHeight, headerHeight, labelWidth, cellWidth } = state.matrix;
+  const { rowHeight, labelWidth, cellWidth } = state.matrix;
   const extraWide = rowHeight >= 42;
   const wide = rowHeight >= 38;
-  const y = headerHeight + rowIndex * rowHeight;
+  const y = rowIndex * rowHeight;
   const selected = run.run_id === state.selectedRunId;
   ctx.fillStyle = selected ? COLORS.accentSoft : rowIndex % 2 ? "#fbfcfd" : "#fff"; ctx.fillRect(0,y,width,rowHeight);
   ctx.strokeStyle = "#edf0f4";ctx.beginPath();ctx.moveTo(0,y+rowHeight-.5);ctx.lineTo(width,y+rowHeight-.5);ctx.stroke();
@@ -465,9 +487,22 @@ function drawCell(ctx, cell, x, y, width, height) {
 function matrixLocation(event) {
   const rect = $("matrix-canvas").getBoundingClientRect();
   const x = event.clientX - rect.left, y = event.clientY - rect.top;
-  const row = Math.floor((y - state.matrix.headerHeight) / state.matrix.rowHeight);
+  const row = Math.floor(y / state.matrix.rowHeight);
   const column = Math.floor((x - state.matrix.labelWidth) / state.matrix.cellWidth);
   return { x,y,row,column };
+}
+
+function scrollMatrixRowIntoView(rowIndex, behavior = "smooth") {
+  if (rowIndex < 0) return;
+  const scroll = $("matrix-scroll");
+  const { headerHeight, rowHeight } = state.matrix;
+  const rowTop = headerHeight + rowIndex * rowHeight;
+  const rowBottom = rowTop + rowHeight;
+  const visibleTop = scroll.scrollTop + headerHeight;
+  const visibleBottom = scroll.scrollTop + scroll.clientHeight;
+  if (rowTop >= visibleTop && rowBottom <= visibleBottom) return;
+  const usableHeight = Math.max(rowHeight, scroll.clientHeight - headerHeight);
+  scroll.scrollTo({ top: Math.max(0, rowTop - headerHeight - (usableHeight - rowHeight) / 2), behavior });
 }
 
 function selectMatrixRow(event) {
@@ -497,7 +532,10 @@ function navigateMatrix(event) {
 }
 
 function renderVariants() {
-  $("variant-list").innerHTML = state.atlas.variants.map((variant,index)=>`<div class="variant-row"><strong>${index+1}</strong><span class="variant-pattern" title="${variant.step_count} steps">${variant.pattern.map((state)=>`<i class="${state}"></i>`).join("")}</span><span>${formatNumber(variant.count)}</span><span>${formatPercent(variant.rate)}</span></div>`).join("") || `<div class="empty-list">No sequence variants available.</div>`;
+  const variants = state.atlas.variants;
+  $("clear-variant").hidden = !state.variantFilter;
+  $("variant-list").innerHTML = variants.length ? `<div class="variant-list-header"><span>#</span><span>Sequence fingerprint</span><span>Runs</span><span>Share</span></div>${variants.map((variant,index)=>`<button class="variant-row ${variant.id === state.variantFilter ? "active" : ""}" type="button" data-variant="${variant.id}" aria-pressed="${variant.id === state.variantFilter}" title="Filter to ${formatNumber(variant.count)} runs with this exact ${variant.step_count}-step path"><strong>${index+1}</strong><span class="variant-pattern">${variant.pattern.map((cellState)=>`<i class="${cellState}"></i>`).join("")}</span><span>${formatNumber(variant.count)}</span><span>${formatPercent(variant.rate)}</span></button>`).join("")}` : `<div class="empty-list">No sequence variants exist in the current KPI scope.</div>`;
+  document.querySelectorAll(".variant-row").forEach((button) => button.addEventListener("click", () => applyVariantFilter(button.dataset.variant)));
 }
 
 function renderLatency() {
@@ -530,10 +568,19 @@ function renderLatency() {
 
 async function selectRun(runId, updateUrl=true) {
   if (!runId) return;
+  if (updateUrl) { const url=new URL(location.href);url.searchParams.set("run",runId);history.replaceState({},"",url); }
   state.selectedRunId=runId;
   state.selectedIndex=state.atlas.runs.findIndex((run)=>run.run_id===runId);
+  if (state.selectedIndex < 0 && updateUrl) {
+    await loadAtlas();
+    return;
+  }
   renderInbox(); renderMatrix();
-  if (updateUrl) { const url=new URL(location.href);url.searchParams.set("run",runId);history.replaceState({},"",url); }
+  if (state.selectedIndex >= 0) {
+    const matrixRun = state.atlas.runs[state.selectedIndex];
+    $("matrix-selection").textContent=`${matrixRun.type}, ${formatDate(matrixRun.start_time)}, deviation ${matrixRun.deviation_score}. ${matrixRun.primary_reason}`;
+    requestAnimationFrame(() => scrollMatrixRowIntoView(state.selectedIndex));
+  }
   try {
     $("inspector-empty").innerHTML=`<span class="spinner"></span><h2>Loading run evidence</h2>`;
     const response=await fetch(`/api/atlas/runs/${encodeURIComponent(runId)}`);const payload=await response.json();
@@ -541,6 +588,15 @@ async function selectRun(runId, updateUrl=true) {
     state.selectedRun=payload.run; renderInspector();
     if(updateUrl && innerWidth<=1320) $("inspector-panel").classList.add("open");
   } catch(error) { showToast(error.message,true); }
+}
+
+function clearInspector() {
+  state.selectedRunId = "";
+  state.selectedRun = null;
+  state.selectedIndex = -1;
+  $("inspector-content").hidden = true;
+  $("inspector-empty").hidden = false;
+  $("inspector-empty").innerHTML = `<span class="empty-mark" aria-hidden="true"></span><h2>Select an execution</h2><p>Choose a run from the inbox or matrix to inspect its explanation and evidence.</p>`;
 }
 
 function renderInspector() {
@@ -584,11 +640,21 @@ function exportVisible() {
   const csv=rows.map((row)=>row.map(csvCell).join(",")).join("\r\n");const link=document.createElement("a");link.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));link.download=`tracer-executions-${new Date().toISOString().slice(0,10)}.csv`;link.click();URL.revokeObjectURL(link.href);
 }
 
-function applyFilters() {
+function applyFilters(clearVariant = true) {
+  if (clearVariant) state.variantFilter = "";
   state.selectedRunId = "";
   state.selectedRun = null;
   updateUrlFromFilters();
   loadAtlas();
+}
+function applySignalFilter(signal) {
+  state.signalFilter = signal || "deviated";
+  state.variantFilter = "";
+  applyFilters(false);
+}
+function applyVariantFilter(variant) {
+  state.variantFilter = variant === state.variantFilter ? "" : variant;
+  applyFilters(false);
 }
 function applyDateFilter(changed) {
   const start = $("filter-start");
@@ -610,13 +676,14 @@ function updateClearDatesState() {
   $("clear-dates").disabled = !$("filter-start").value && !$("filter-end").value;
 }
 function updateUrlFromFilters() { const url=new URL(location.href);url.search="";Object.entries(currentFilters()).forEach(([key,value])=>value&&url.searchParams.set(key,value));history.replaceState({},"",url); }
-function filtersFromUrl(){const p=new URLSearchParams(location.search);return{name:p.get("name")||"",type:p.get("type")||"",start:p.get("start")||"",end:p.get("end")||"",status:p.get("status")||"",sort:p.get("sort")||"deviation"};}
-function currentFilters(){return{name:$("filter-name").value,type:$("filter-type").value,start:$("filter-start").value,end:$("filter-end").value,status:$("filter-status").value,sort:$("filter-sort").value};}
+function filtersFromUrl(){const p=new URLSearchParams(location.search);return{name:p.get("name")||"",type:p.get("type")||"",start:p.get("start")||"",end:p.get("end")||"",status:p.get("status")||"",sort:p.get("sort")||"deviation",signal:p.get("signal")||"deviated",variant:p.get("variant")||""};}
+function currentFilters(){return{name:$("filter-name").value,type:$("filter-type").value,start:$("filter-start").value,end:$("filter-end").value,status:$("filter-status").value,sort:$("filter-sort").value,signal:state.signalFilter,variant:state.variantFilter};}
 function setLoading(on){$("loading-state").hidden=!on;}
 function renderFatal(message){$("summary-strip").innerHTML=`<div class="empty-list" style="grid-column:1/-1"><strong>Tracer could not build the execution atlas.</strong><br>${escapeHtml(message)}</div>`;}
 function showToast(message,error=false){const el=$("toast");el.textContent=message;el.classList.toggle("error",error);el.hidden=false;clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>el.hidden=true,5200);}
 
 function scoreColor(score){return score>=40?COLORS.error:score>=18?COLORS.slow:score>0?COLORS.unexpected:COLORS.normal;}
+function signalLabel(signal){return ({all:"All",deviated:"Deviated",failed:"Failed",slow:"Slow"})[signal] || "Deviated";}
 function shortProcedure(value=""){return value.replace(/^XSTUDIO_WORKFLOW_/i,"Workflow ").replace(/_SP$/i,"").replace(/^XMES_/i,"").replace(/_/g," ");}
 function formatNumber(value){return new Intl.NumberFormat().format(Number(value||0));}
 function formatPercent(value){return new Intl.NumberFormat(undefined,{style:"percent",maximumFractionDigits:1}).format(Number(value||0));}
