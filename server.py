@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import mimetypes
 import time
@@ -9,7 +10,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from tracer import analyzer, cache, parsers
+from tracer import analyzer, atlas, cache, parsers
 from tracer.config import DB_PATH, SCHEMA_DOC_PATH, SP_DOC_PATH, WEB_ROOT, sql_config
 from tracer.sql_client import SqlClient, SqlClientError
 
@@ -84,6 +85,17 @@ class TracerServer(SimpleHTTPRequestHandler):
             elif path == "/api/playback":
                 params = {key: first(query, key, "") for key in ("name", "type", "q", "limit", "start", "end", "sr_no", "sub_seq_no", "step", "run_id")}
                 self.json_response(playback(conn, params))
+            elif path == "/api/atlas":
+                params = {key: first(query, key, "") for key in ("name", "type", "status", "start", "end", "sort", "limit")}
+                self.json_response(atlas.atlas_payload(conn, params))
+            elif path.startswith("/api/atlas/runs/"):
+                run_id = unquote(path.split("/api/atlas/runs/", 1)[1])
+                payload = atlas.run_payload(conn, run_id)
+                if payload is None:
+                    status = 404
+                    self.json_response({"ok": False, "error": f"Run not found: {run_id}"}, status=404)
+                else:
+                    self.json_response(payload)
             else:
                 status = 404
                 self.send_error(404)
@@ -257,14 +269,18 @@ def sanitize_runtime_error(message: str, client: SqlClient) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the local Tracer analysis server.")
+    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=PORT, help=f"Bind port (default: {PORT})")
+    args = parser.parse_args()
     mimetypes.add_type("text/javascript", ".js")
     init_conn = cache.connect()
     try:
         cache.init_db(init_conn)
     finally:
         init_conn.close()
-    httpd = ThreadingHTTPServer(("127.0.0.1", PORT), TracerServer)
-    print(f"Tracer running at http://127.0.0.1:{PORT}")
+    httpd = ThreadingHTTPServer((args.host, args.port), TracerServer)
+    print(f"Tracer running at http://{args.host}:{args.port}")
     httpd.serve_forever()
 
 

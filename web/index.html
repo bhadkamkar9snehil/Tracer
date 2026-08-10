@@ -3,238 +3,104 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XStudio Tracer</title>
-    <meta name="description" content="SQL trace visualizer for XStudio/XMES stored-procedure execution flows" />
+    <title>Tracer — Execution Atlas</title>
+    <meta name="description" content="Explainable visual analysis for high-volume XStudio execution logs" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle filters">Filters</button>
-    <div id="app-shell">
-      <aside class="left-rail">
-        <header class="brand-block">
-          <div class="system-label">XSTUDIO TRACE ENGINE</div>
-          <h1>Tracer</h1>
-          <div id="connection-state" class="state-pill">BOOTING</div>
+    <header class="app-bar">
+      <a class="brand" href="/" aria-label="Tracer home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>Tracer</span>
+      </a>
+      <div id="freshness" class="freshness" aria-live="polite">
+        <span class="status-dot"></span><strong>Loading cache</strong><span>Checking freshness…</span>
+      </div>
+      <form id="filters" class="filter-bar">
+        <label><span>Procedure</span><select id="filter-name"><option value="">All procedures</option></select></label>
+        <label><span>Type</span><select id="filter-type"><option value="">All types</option></select></label>
+        <label><span>Status</span><select id="filter-status"><option value="">All statuses</option></select></label>
+        <label><span>Sort</span><select id="filter-sort"><option value="deviation">Highest deviation</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="duration">Longest duration</option></select></label>
+        <button class="button primary" type="submit">Apply</button>
+      </form>
+      <div class="header-actions">
+        <button id="export-visible" class="button" type="button" title="Export visible executions as CSV">Export</button>
+        <button id="sync-data" class="button" type="button" title="Read the next bounded window from configured SQL">Sync</button>
+      </div>
+    </header>
+
+    <main class="app-layout">
+      <aside class="inbox-panel" aria-labelledby="inbox-heading">
+        <header class="panel-heading">
+          <div><h1 id="inbox-heading">Anomaly inbox</h1><p>Ranked by explainable deviation</p></div>
+          <strong id="inbox-count">—</strong>
         </header>
-
-        <section class="rail-section collapsed">
-          <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Run Selector <span class="arrow">▼</span></div>
-          <div class="rail-body">
-            <dl class="kv">
-              <dt>Rows</dt><dd id="metric-rows">--</dd>
-              <dt>SPs</dt><dd id="metric-names">--</dd>
-              <dt>Cache</dt><dd id="metric-cache">--</dd>
-            </dl>
-            <div class="split-fields">
-              <label>Source
-                <select id="filter-source">
-                  <option value="cache">Cache</option>
-                  <option value="sql">Live SQL</option>
-                </select>
-              </label>
-              <label>Limit
-                <input id="filter-limit" type="number" min="10" max="5000" step="10" value="200" />
-              </label>
-            </div>
-            <button id="sync-button" class="wide">Sync trace rows</button>
-          </div>
-        </section>
-
-        <section class="rail-section collapsed">
-          <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Time Window <span class="arrow">▼</span></div>
-          <div class="rail-body">
-            <dl class="kv"><dt>Range</dt><dd id="metric-range">--</dd></dl>
-            <div class="date-range">
-              <label>From<input id="filter-start" type="datetime-local" /></label>
-              <label>To<input id="filter-end" type="datetime-local" /></label>
-            </div>
-            <div class="field-hint">Format: YYYY-MM-DD HH:mm. From must be before To.</div>
-          </div>
-        </section>
-
-        <section class="rail-section collapsed">
-          <div class="rail-header" onclick="this.parentElement.classList.toggle('collapsed')">Trace Filters <span class="arrow">▼</span></div>
-          <div class="rail-body">
-            <label>SP Name<select id="filter-name"><option value="">All procedures</option></select></label>
-            <label>Trace Type<select id="filter-type"><option value="">All types</option></select></label>
-            <label>Execution Run<select id="filter-run"><option value="">-- Loose Events --</option></select></label>
-            <div class="split-fields">
-              <label>SrNo<input id="filter-sr" type="number" min="0" placeholder="any" /></label>
-              <label>SubSeq<input id="filter-subseq" type="number" min="0" placeholder="any" /></label>
-            </div>
-            <label>Step Contains<input id="filter-step" type="search" placeholder="Entered, Completed..." /></label>
-            <label>Search Evidence<input id="filter-q" type="search" placeholder="step, query, details" /></label>
-            <div id="filter-status" class="filter-status">Showing latest cached trace rows.</div>
-          </div>
-        </section>
-
-        <section class="rail-section sticky-bottom">
-          <div class="rail-body">
-            <button id="apply-filters" class="primary wide">Apply Filters</button>
-            <button id="wrong-mode" class="danger wide">What is wrong?</button>
-            <div class="button-row" style="margin-top:0.5rem">
-              <button id="open-runtime">Runtime log</button>
-              <button id="open-sp-map">SP map</button>
-            </div>
-          </div>
-        </section>
+        <div class="inbox-legend" aria-label="Severity legend"><span><i class="high"></i>High</span><span><i class="medium"></i>Medium</span><span><i class="low"></i>Low</span></div>
+        <div id="anomaly-list" class="anomaly-list" role="list"></div>
       </aside>
-      <div id="sidebar-resizer" class="sidebar-resizer" title="Drag to resize filters"></div>
 
-      <main class="workspace">
-        <section class="top-strip">
-          <div class="stat">
-            <span>Dominant SP</span>
-            <strong id="dominant-sp">--</strong>
-          </div>
-          <div class="stat">
-            <span>Top Type</span>
-            <strong id="dominant-type">--</strong>
-          </div>
-          <div class="stat action-stat" id="top-wrong-action" title="Click to view damage diagnosis">
-            <span>Open Damage</span>
-            <strong id="damage-count">--</strong>
-          </div>
-          <div class="stat">
-            <span>Watermark</span>
-            <strong id="watermark">--</strong>
-          </div>
-          <div class="stat">
-            <span>Runtime</span>
-            <strong id="runtime-started">--</strong>
-          </div>
+      <section class="analysis-workspace" aria-label="Execution analysis">
+        <section id="summary-strip" class="summary-strip" aria-label="Execution summary"></section>
+
+        <section class="density-band" aria-labelledby="density-heading">
+          <div class="section-copy"><h2 id="density-heading">Event density</h2><p>Execution volume and deviations over the selected window</p></div>
+          <div class="density-legend"><span><i class="total"></i>All runs</span><span><i class="deviated"></i>Deviated</span><span><i class="failed"></i>Failed</span></div>
+          <svg id="density-chart" role="img" aria-label="Execution density over time"></svg>
         </section>
 
-        <section class="graph-frame">
-          <canvas id="graph-canvas"></canvas>
-          <div class="graph-controls">
-            <select id="graph-scope" title="Graph scope">
-              <option value="focused">Focused SP</option>
-              <option value="selected">Selected SP</option>
-              <option value="neighbourhood">Neighbourhood</option>
-              <option value="all" selected>All System</option>
-            </select>
-            <select id="view-mode" title="Graph view mode">
-              <option value="workflow">Workflow Map</option>
-              <option value="steps">Step Tower</option>
-              <option value="damage">Damage Focus</option>
-              <option value="expected">Expected Path</option>
-            </select>
-            <select id="color-scheme" title="Color scheme">
-              <option value="default">Default</option>
-              <option value="ocean">Ocean</option>
-              <option value="graphite">Graphite</option>
-              <option value="contrast">Contrast</option>
-            </select>
-            <button id="view-reset">Reset</button>
-            <button id="view-top">Top</button>
-            <button id="view-front">Front</button>
-            <button id="export-graph">PNG</button>
-            <button id="run-playback">Playback</button>
-            <button id="open-map-key" title="Show color & shape legend">Map Key</button>
-          </div>
-          <div class="graph-overlay">
-            <div id="graph-overlay-title">Focused SP View</div>
-            <span id="graph-overlay-info">Loading...</span>
-          </div>
-
-          <div id="hover-tooltip" class="hover-tooltip" hidden></div>
-
-          <!-- Floating Camera Controls Widget -->
-          <div class="camera-controls-widget">
-            <div class="widget-section">
-              <div class="widget-title">PAN</div>
-              <div class="dpad-grid">
-                <div></div>
-                <button id="cam-pan-up" class="dpad-btn" title="Pan Up">▲</button>
-                <div></div>
-                <button id="cam-pan-left" class="dpad-btn" title="Pan Left">◀</button>
-                <div class="dpad-center">●</div>
-                <button id="cam-pan-right" class="dpad-btn" title="Pan Right">▶</button>
-                <div></div>
-                <button id="cam-pan-down" class="dpad-btn" title="Pan Down">▼</button>
-                <div></div>
-              </div>
+        <section class="matrix-section" aria-labelledby="matrix-heading">
+          <header class="section-header">
+            <div><h2 id="matrix-heading">Run × step deviation matrix</h2><p id="matrix-subtitle">Rows are reconstructed executions. Columns are normalized trace steps.</p></div>
+            <div class="matrix-legend" aria-label="Matrix legend">
+              <span><i class="normal"></i>Normal</span><span><i class="slow"></i>Slow</span><span><i class="missing"></i>Missing</span><span><i class="unexpected"></i>Unexpected</span><span><i class="repeated"></i>Repeated</span>
             </div>
-            <div class="widget-divider"></div>
-            <div class="widget-section">
-              <div class="widget-title">ORBIT</div>
-              <div class="dpad-grid">
-                <div></div>
-                <button id="cam-rot-up" class="dpad-btn" title="Orbit Up">▲</button>
-                <div></div>
-                <button id="cam-rot-left" class="dpad-btn" title="Orbit Left">◀</button>
-                <div class="dpad-center">↺</div>
-                <button id="cam-rot-right" class="dpad-btn" title="Orbit Right">▶</button>
-                <div></div>
-                <button id="cam-rot-down" class="dpad-btn" title="Orbit Down">▼</button>
-                <div></div>
-              </div>
-            </div>
-            <div class="widget-divider"></div>
-            <div class="widget-section">
-              <div class="widget-title">ZOOM</div>
-              <div class="zoom-row">
-                <button id="cam-zoom-in" class="zoom-btn" title="Zoom In">+</button>
-                <button id="cam-zoom-out" class="zoom-btn" title="Zoom Out">−</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="diagnostic-drawer drawer-collapsed" id="diagnostic-drawer">
-          <header class="drawer-header" id="drawer-toggle">
-            <div class="drawer-title">
-               <span class="indicator"></span>
-               Diagnostic Drawer
-            </div>
-            <div class="drawer-modes">
-              <button class="drawer-mode-button active" data-mode="diagnosis">Diagnosis</button>
-              <button class="drawer-mode-button" data-mode="timeline">Timeline</button>
-              <button class="drawer-mode-button" data-mode="evidence">Evidence</button>
-              <button class="drawer-mode-button" data-mode="raw">Raw Trace</button>
-            </div>
-            <span class="drawer-arrow">▲</span>
           </header>
-          <div class="drawer-body">
-            <div id="drawer-diagnosis" class="drawer-panel active">
-               <div class="diagnosis-grid" id="diagnosis-container"></div>
-            </div>
-            <div id="drawer-timeline" class="drawer-panel">
-               <div class="playback-controls" style="padding: 1rem; border-bottom: 1px solid #2a3035;">
-                 <button id="playback-play" class="primary">Play</button>
-                 <button id="playback-pause">Pause</button>
-                 <button id="playback-stop">Stop</button>
-                 <span id="playback-status" style="margin-left: 1rem; color: #8d9698;">Stopped</span>
-               </div>
-               <div id="timeline-events" style="padding: 1rem; color: #eee;">Select a run and press Play to see events.</div>
-            </div>
-            <div id="drawer-evidence" class="drawer-panel">
-               <pre id="drawer-evidence-content" style="padding: 1rem; color: #eee; font-family: monospace; white-space: pre-wrap; margin: 0;">Select a diagnosis or node to see evidence.</pre>
-            </div>
-            <div id="drawer-raw" class="drawer-panel">
-               <div id="raw-table-container"></div>
-            </div>
+          <div id="matrix-scroll" class="matrix-scroll">
+            <canvas id="matrix-canvas" tabindex="0" role="img" aria-describedby="matrix-subtitle matrix-selection"></canvas>
           </div>
+          <footer class="matrix-footer"><span id="matrix-result">Loading executions…</span><span>Click a row for its evidence</span></footer>
+          <div id="matrix-selection" class="sr-only" aria-live="polite"></div>
+          <div id="matrix-tooltip" class="matrix-tooltip" hidden></div>
         </section>
-      </main>
-    </div>
 
-    <div id="modal-backdrop" class="modal-backdrop" hidden>
-      <section class="modal-panel">
-        <header class="modal-header">
-          <div>
-            <div id="modal-kicker" class="panel-title">Inspector</div>
-            <h2 id="inspect-title">Select a node</h2>
-          </div>
-          <button id="close-modal">Close</button>
-        </header>
-        <div id="inspect-meta" class="meta-grid"></div>
-        <div class="subhead">Evidence</div>
-        <pre id="inspect-evidence">Click an SP, step, table, or edge in the 3D map.</pre>
-        <div id="tab-runtime"></div>
+        <div class="secondary-analysis">
+          <section class="variants-section" aria-labelledby="variants-heading">
+            <header class="section-header"><div><h2 id="variants-heading">Sequence variants</h2><p>Dominant and rare execution fingerprints</p></div></header>
+            <div id="variant-list" class="variant-list"></div>
+          </section>
+          <section class="latency-section" aria-labelledby="latency-heading">
+            <header class="section-header"><div><h2 id="latency-heading">Per-step latency</h2><p>Median, p95 and maximum gap duration</p></div></header>
+            <div id="latency-chart" class="latency-chart"></div>
+          </section>
+        </div>
       </section>
-    </div>
+
+      <aside id="inspector-panel" class="inspector-panel" aria-labelledby="inspector-heading">
+        <div id="inspector-empty" class="inspector-empty">
+          <span class="empty-mark" aria-hidden="true"></span>
+          <h2 id="inspector-heading">Select an execution</h2>
+          <p>Choose an anomaly or matrix row to compare its actual path with the dominant behaviour of comparable runs.</p>
+        </div>
+        <div id="inspector-content" hidden>
+          <header class="run-header">
+            <div><p id="run-procedure" class="eyebrow"></p><h2 id="run-title"></h2><p id="run-meta"></p></div>
+            <div class="score-block"><strong id="run-score">—</strong><span>deviation</span></div>
+            <button id="close-inspector" class="close-inspector" type="button" aria-label="Close run inspector">×</button>
+          </header>
+          <div class="inspector-tabs" role="tablist" aria-label="Run evidence views">
+            <button class="active" role="tab" aria-selected="true" data-tab="explanation">Explanation</button>
+            <button role="tab" aria-selected="false" data-tab="waterfall">Waterfall</button>
+            <button role="tab" aria-selected="false" data-tab="evidence">Raw evidence</button>
+          </div>
+          <section id="tab-explanation" class="tab-panel active" role="tabpanel"></section>
+          <section id="tab-waterfall" class="tab-panel" role="tabpanel"></section>
+          <section id="tab-evidence" class="tab-panel" role="tabpanel"></section>
+        </div>
+      </aside>
+    </main>
+
+    <div id="loading-state" class="loading-state" aria-live="polite"><span class="spinner"></span><strong>Reconstructing the execution atlas</strong><span>Comparing sequence, timing and outcome evidence…</span></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
     <script type="module" src="/app.js"></script>
   </body>

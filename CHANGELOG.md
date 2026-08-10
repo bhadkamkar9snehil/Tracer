@@ -1,21 +1,26 @@
 # Changelog
 
-## Unreleased - 2026-05-23
+## 1.0.0 — 2026-08-10
 
-### Fixed
-- Hardened analyzer run reconstruction to avoid nested SQLite transaction failures by using a safe savepoint/transaction pattern.
-- Prevented unavailable expected paths from being recorded or displayed as perfect run-delta scores.
-- Restored incomplete-run fallback diagnostics when the actual_runs table exists but has no reconstructed runs.
-- Ensured selected-run playback compares the full selected run instead of using the UI row limit.
-- Reduced false unexpected rows from duplicate/retry trace events with the same SrNo/SubSeqNo.
+### Product
 
-### Changed
-- Centralized analyzer expected-vs-actual comparison behavior so playback and saved run deltas remain consistent.
-- Made run-delta score storage compatible with both nullable and NOT NULL score schemas.
+- Replaced the abandoned 3D graph interface with the complete 2D Execution Atlas.
+- Added the run-by-step matrix, anomaly inbox, time density, sequence variants, per-step latency, selected-run waterfall, and raw evidence views.
+- Added procedure, type, status, and ordering filters with URL-backed state.
+- Added visible cache freshness, bounded SQL sync, CSV export, loading, empty, stale, offline, and error states.
+- Added small-laptop and desktop layouts for supported widths of 1024 pixels and above.
 
-### Validation
-- Ran Python compile checks.
-- Ran SQLite smoke tests for expected-path unavailable, duplicate actual rows, empty actual_runs fallback, selected-run playback, and transaction-safe reconstruction.
+### Analysis
 
-### Notes
-- Browser-heavy testing was intentionally skipped; UI verification remains manual.
+- Added procedure/type cohort baselines learned from dominant execution sequences.
+- Added explainable scoring for outcome, missing, unexpected, reordered, repeated, slow, and rare-path deviations.
+- Added normalized ordinal matrices for cross-procedure overviews and semantic matrices for focused cohorts.
+- Added p50, p95, p99, maximum, failure, deviation, density, and variant aggregations.
+- Removed reliance on incomplete legacy `run_deltas` scores.
+
+### Engineering
+
+- Added `/api/atlas` and `/api/atlas/runs/{run_id}` contracts.
+- Added host and port command-line options.
+- Added standard-library automated regression coverage, including empty-cache behavior.
+- Replaced placeholder documentation with complete local operation, testing, SQL configuration, API, architecture, interpretation, and troubleshooting guidance.

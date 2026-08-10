@@ -1,124 +1,209 @@
 # Tracer
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+Tracer is a local execution-analysis application for high-volume XStudio/XMES trace logs. It reconstructs individual runs, learns the dominant sequence and timing behaviour of comparable runs, and presents deviations as a coordinated 2D investigation workspace.
 
-**Tracer** is an early-stage 3D visualiser for logs.
+The application is intentionally cache-first. It remains usable when SQL Server is unavailable and always displays the age of the cached evidence.
 
-The goal of Tracer is to make log exploration more spatial and interactive. Instead of scanning log lines one by one, Tracer is intended to help engineers load structured events, view them across time, inspect relationships between events, and identify patterns, anomalies, or broken flows in a 3D interface.
+## What it provides
 
-## Status
+- Run-by-step deviation matrix for hundreds of executions at once.
+- Ranked anomaly inbox with plain-language explanations.
+- Expected-versus-actual waterfall for a selected execution.
+- Raw event evidence, including sequence numbers and execution query.
+- Sequence-variant frequency analysis.
+- Per-step median, p95, p99, and maximum latency analysis.
+- Execution, deviation, and failure density over time.
+- Filters for procedure, type, status, and ordering.
+- CSV export of the currently visible executions.
+- Explicit, bounded SQL synchronization into a local SQLite cache.
+- Responsive layouts for small laptops and desktop monitors. The supported minimum width is 1024 pixels; mobile phones are not a target surface.
 
-Tracer is currently in its initial project setup phase. This README describes the intended direction of the project and will be updated as the implementation, setup instructions, and runtime commands are added.
+## Deviation model
 
-## Why Tracer?
+Runs are compared only with runs sharing the same procedure and trace type. Tracer explains:
 
-Traditional log viewers are usually linear: search, filter, scroll, repeat. That works for simple debugging, but it becomes harder when logs include many services, sessions, traces, retries, or overlapping event streams.
+- error, incomplete, orphan, and unknown outcomes;
+- missing expected steps;
+- unexpected steps;
+- reordered steps;
+- repeated steps and retry-like behaviour;
+- step latency beyond the cohort p95;
+- rare execution sequences.
 
-Tracer is intended to help with:
+The dominant observed sequence becomes the cohort baseline. The UI does not treat an opaque model score as evidence: every non-zero score is accompanied by the concrete conditions that produced it.
 
-- spotting bursts, gaps, clusters, and outliers in event streams;
-- comparing logs across runs, requests, sessions, or services;
-- visualising temporal relationships between related events;
-- inspecting complex traces without losing the wider context;
-- turning raw logs into an explorable debugging surface.
+## Requirements
 
-## Intended workflow
+- Windows PowerShell or another terminal.
+- Python 3.11 or newer.
+- A modern Chromium-based browser.
+- Optional for live synchronization: Microsoft `sqlcmd` plus read access to `XStudio_Xbatch.dbo.XStudio_List_XMES_Log_Trn_Tbl_Vw`.
 
-A typical Tracer workflow will look like this:
+The application itself uses only the Python standard library. No `pip install` step is required.
 
-1. Export or collect logs from an application, service, script, or system.
-2. Convert the logs into a structured event format.
-3. Load the structured events into Tracer.
-4. Explore the log data in a 3D scene using time, source, severity, and relationships as visual dimensions.
-5. Select individual events to inspect their raw payload and metadata.
+## Run locally
 
-## Planned capabilities
+From PowerShell:
 
-Tracer is expected to grow around the following capabilities:
-
-- structured log import, starting with formats such as JSON, NDJSON, or CSV;
-- a timeline-based 3D visualisation of events;
-- filtering by timestamp, severity, source, component, request ID, or trace ID;
-- visual encoding for severity, category, duration, and relationship type;
-- event selection with raw log payload inspection;
-- support for sample datasets and reproducible demo scenarios;
-- exportable or shareable views for debugging notes and investigations.
-
-## Example event shape
-
-Tracer will work best with structured logs. A minimal event could look like this:
-
-```json
-{
-  "timestamp": "2026-05-23T10:30:00Z",
-  "level": "info",
-  "source": "api-gateway",
-  "message": "Request completed",
-  "trace_id": "trace-123",
-  "span_id": "span-456",
-  "duration_ms": 42,
-  "attributes": {
-    "method": "GET",
-    "path": "/health",
-    "status_code": 200
-  }
-}
+```powershell
+cd C:\Users\Admin\Documents\Office\Tracer
+python -m unittest discover -s tests -v
+python server.py
 ```
 
-This schema is illustrative and may change as the project develops.
+Open:
 
-## Repository setup
-
-Clone the repository:
-
-```bash
-git clone https://github.com/bhadkamkar9snehil/Tracer.git
-cd Tracer
+```text
+http://127.0.0.1:8765
 ```
 
-The application source code has not been documented in this README yet. Once the implementation is added, this section should include:
+Stop the server with `Ctrl+C`.
 
-- required runtime versions;
-- dependency installation steps;
-- local development commands;
-- build commands;
-- test commands;
-- sample input files and demo instructions.
+If `python` is not on `PATH`, use the installed Python executable explicitly:
 
-## Development notes
+```powershell
+& "C:\Path\To\python.exe" -m unittest discover -s tests -v
+& "C:\Path\To\python.exe" server.py
+```
 
-When implementation begins, keep the README aligned with the actual project by documenting:
+Custom host or port:
 
-- the supported log formats;
-- the expected event schema;
-- how to run the app locally;
-- how to load demo data;
-- any renderer, UI, backend, or storage assumptions;
-- known limitations and performance expectations.
+```powershell
+python server.py --host 127.0.0.1 --port 9000
+```
 
-## Roadmap
+Then open `http://127.0.0.1:9000`.
 
-Initial project milestones:
+## First run and local data
 
-- [ ] Define the MVP structured event schema.
-- [ ] Add sample log datasets.
-- [ ] Implement the first log importer.
-- [ ] Build the initial 3D event scene.
-- [ ] Add basic filtering and event inspection.
-- [ ] Document local setup and development commands.
-- [ ] Add screenshots or a demo GIF once the UI exists.
+Tracer stores runtime data in:
 
-## Contributing
+```text
+data\tracer.sqlite
+```
 
-Contributions are welcome once the project structure is in place.
+That file is deliberately excluded from Git because it can contain environment-specific operational evidence.
 
-For future contributions:
+- In this workspace, the existing cache is loaded automatically.
+- With an empty cache, the application displays a valid empty state.
+- To populate an empty cache, configure read-only SQL access, start Tracer, and press **Sync**.
+- Each sync reads at most 5,000 trace rows and then reconstructs new runs locally.
 
-1. Open an issue describing the bug, improvement, or feature proposal.
-2. Keep pull requests focused and small enough to review.
-3. Include sample logs or screenshots when changing visual behaviour.
-4. Update documentation when changing setup, input formats, or user-facing behaviour.
+## Configure optional SQL synchronization
+
+Set variables in the same PowerShell window before starting the server:
+
+```powershell
+$env:TRACER_SQL_SERVER = "YOUR_SQL_SERVER_HOSTNAME"
+$env:TRACER_SQL_USER = "YOUR_READ_ONLY_USER"
+$env:TRACER_SQL_PASSWORD = "YOUR_PASSWORD"
+$env:TRACER_SQL_DATABASE = "XStudio_Xbatch"
+$env:TRACER_SQLCMD = "sqlcmd"
+python server.py
+```
+
+Use the verified SQL Server hostname required by TLS. Do not place credentials in source files, `.env.example`, shell history, screenshots, or Git.
+
+Tracer uses SQL only for bounded reads. All reconstruction, baselines, scoring, and analysis are written to the local SQLite cache.
+
+## How to test the product manually
+
+1. Confirm the header shows the correct cache state and watermark.
+2. Select **Error** under Status and press **Apply**.
+3. Confirm the summary shows only error executions.
+4. Select an anomaly from the left inbox.
+5. Open **Explanation**, **Waterfall**, and **Raw evidence** in the inspector.
+6. Click different matrix rows and confirm the inspector changes.
+7. Filter to one procedure and type; confirm matrix columns change from normalized positions to semantic steps.
+8. Press **Export** and open the generated CSV.
+9. If read-only SQL is configured, press **Sync** and confirm the watermark advances or the UI reports that no new rows were found.
+
+## Automated validation
+
+```powershell
+python -m unittest discover -s tests -v
+python -m py_compile server.py tracer\atlas.py tracer\analyzer.py tracer\cache.py tracer\config.py tracer\parsers.py tracer\sql_client.py
+node --check web\app.js
+```
+
+API smoke checks while the server is running:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8765/api/health
+Invoke-RestMethod http://127.0.0.1:8765/api/atlas
+Invoke-RestMethod "http://127.0.0.1:8765/api/atlas?status=error&sort=deviation"
+```
+
+## API
+
+| Route | Purpose |
+|---|---|
+| `GET /api/health` | Cache, configuration, and runtime health |
+| `GET /api/atlas` | Coordinated summary, density, matrix, variants, and latency contract |
+| `GET /api/atlas/runs/{run_id}` | Explainable selected-run comparison and raw evidence |
+| `POST /api/sync?limit=5000&mode=incremental` | Bounded read-only SQL synchronization |
+| `GET /api/trace/events` | Cached or explicitly requested live events |
+| `GET /api/runs` | Reconstructed run list |
+
+Supported `/api/atlas` query parameters:
+
+```text
+name, type, status, start, end, sort, limit
+```
+
+`limit` is bounded to 20–300 matrix rows. Analysis still covers all matching runs up to the backend safety limit; only the interactive matrix is capped.
+
+## Architecture
+
+```text
+XStudio trace view (optional bounded read)
+  -> SQLite trace_events
+  -> heuristic run reconstruction
+  -> procedure/type cohort baselines
+  -> explainable deviation analysis
+  -> coordinated local browser workspace
+```
+
+- `server.py`: local HTTP and JSON API server.
+- `tracer/atlas.py`: cohort baselines, deviation explanations, density, matrix, variants, and latency contracts.
+- `tracer/analyzer.py`: legacy-compatible reconstruction and supporting analysis.
+- `tracer/cache.py`: SQLite schema and cache access.
+- `tracer/sql_client.py`: bounded `sqlcmd` read client.
+- `web/`: code-native HTML, CSS, Canvas2D, SVG, and interaction layer.
+- `tests/`: standard-library regression tests.
+
+## Interpretation boundaries
+
+- A cohort baseline is historical behaviour, not proof that the behaviour is correct.
+- Small cohorts cannot support reliable rarity or percentile conclusions; Tracer suppresses some signals until enough comparable runs exist.
+- Run reconstruction is heuristic because the source trace does not always expose a durable transaction/session key.
+- A stale cache is still displayed, but it is explicitly marked stale or offline.
+- Live synchronization does not change XStudio configuration or operational records.
+
+## Troubleshooting
+
+### Page opens but contains no executions
+
+Check `data\tracer.sqlite`. Configure read-only SQL access and press **Sync** if the cache is empty.
+
+### Sync reports incomplete SQL configuration
+
+Set `TRACER_SQL_SERVER`, `TRACER_SQL_USER`, `TRACER_SQL_PASSWORD`, and `TRACER_SQL_DATABASE` in the same terminal used to launch `server.py`.
+
+### `sqlcmd` is not found
+
+Install Microsoft SQL command-line tools or set `TRACER_SQLCMD` to the full executable path.
+
+### Port 8765 is already in use
+
+```powershell
+python server.py --port 9000
+```
+
+### Cache findings look old
+
+The watermark in the header is the evidence timestamp. Configure SQL and run a bounded sync; do not interpret old cached anomalies as current operational state.
 
 ## License
 
-Tracer is licensed under the [Apache License 2.0](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
