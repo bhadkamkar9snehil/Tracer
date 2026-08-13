@@ -77,7 +77,10 @@ function bindActions() {
   $("matrix-canvas").addEventListener("keydown", navigateMatrix);
   window.addEventListener("resize", debounce(() => {
     applyLayoutState();
-    if (state.atlas) renderMatrix();
+    if (state.atlas) {
+      renderDensity();
+      renderMatrix();
+    }
   }, 100));
   document.querySelectorAll(".inspector-tabs button").forEach((button) => {
     button.addEventListener("click", () => activateInspectorTab(button.dataset.tab));
@@ -386,7 +389,7 @@ function renderDensity() {
   const data = state.atlas.density;
   const svg = $("density-chart");
   const width = Math.max(520, svg.clientWidth || 900);
-  const height = 66;
+  const height = Math.max(40, svg.clientHeight || 66);
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   if (!data.length) { svg.innerHTML = ""; return; }
   const max = Math.max(1, ...data.map((d) => d.total));
@@ -394,7 +397,8 @@ function renderDensity() {
   const y = (value) => height - 15 - value / max * (height - 24);
   const path = (key) => data.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d[key]).toFixed(1)}`).join(" ");
   const grid = [0.25,0.5,0.75].map((ratio) => `<line x1="4" x2="${width-4}" y1="${y(max*ratio)}" y2="${y(max*ratio)}" stroke="#e7eaf0"/>`).join("");
-  svg.innerHTML = `${grid}<path d="${path("total")}" fill="none" stroke="${COLORS.accent}" stroke-width="1.7"/><path d="${path("deviated")}" fill="none" stroke="${COLORS.slow}" stroke-width="1.4"/><path d="${path("failed")}" fill="none" stroke="${COLORS.error}" stroke-width="1.4"/><text x="4" y="64" fill="${COLORS.muted}" font-size="9">${escapeHtml(formatShortDate(data[0].start))}</text><text x="${width-4}" y="64" text-anchor="end" fill="${COLORS.muted}" font-size="9">${escapeHtml(formatShortDate(data.at(-1).start))}</text>`;
+  const labelY = height - 2;
+  svg.innerHTML = `${grid}<path d="${path("total")}" fill="none" stroke="${COLORS.accent}" stroke-width="1.7"/><path d="${path("deviated")}" fill="none" stroke="${COLORS.slow}" stroke-width="1.4"/><path d="${path("failed")}" fill="none" stroke="${COLORS.error}" stroke-width="1.4"/><text x="4" y="${labelY}" fill="${COLORS.muted}" font-size="9">${escapeHtml(formatShortDate(data[0].start))}</text><text x="${width-4}" y="${labelY}" text-anchor="end" fill="${COLORS.muted}" font-size="9">${escapeHtml(formatShortDate(data.at(-1).start))}</text>`;
 }
 
 function renderInbox() {
