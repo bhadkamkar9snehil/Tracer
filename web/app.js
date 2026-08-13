@@ -389,22 +389,27 @@ function renderInbox() {
 
 function renderMatrix() {
   const { runs, steps, result } = state.atlas;
-  const headerCanvas = $("matrix-header-canvas");
   const canvas = $("matrix-canvas");
-  updateMatrixMetrics(steps.length, $("matrix-scroll").clientWidth);
+  const labelsCanvas = $("matrix-labels-canvas");
+  updateMatrixMetrics(steps.length, $("matrix-scroll").clientWidth, result.matrix_mode);
   const { rowHeight, headerHeight, labelWidth, cellWidth } = state.matrix;
   const cssWidth = Math.max($("matrix-scroll").clientWidth, labelWidth + steps.length * cellWidth + 8);
   const cssHeight = Math.max(1, runs.length * rowHeight);
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  const headerCtx = prepareCanvas(headerCanvas, cssWidth, headerHeight, ratio);
   const ctx = prepareCanvas(canvas, cssWidth, cssHeight, ratio);
+  const labelsCtx = prepareCanvas(labelsCanvas, labelWidth, cssHeight, ratio);
+  $("matrix-body").style.width = `${cssWidth}px`;
+  $("matrix-body").style.height = `${cssHeight}px`;
   ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cssWidth,cssHeight);
-  drawMatrixHeader(headerCtx, steps, cssWidth);
-  runs.forEach((run, rowIndex) => drawMatrixRow(ctx, run, rowIndex, steps, cssWidth));
+  renderMatrixHeader(steps, cssWidth, headerHeight, labelWidth, cellWidth);
+  runs.forEach((run, rowIndex) => {
+    drawMatrixRow(ctx, run, rowIndex, steps, cssWidth);
+    drawMatrixRow(labelsCtx, run, rowIndex, [], labelWidth);
+  });
   $("matrix-result").textContent = `Showing ${formatNumber(result.shown)} of ${formatNumber(result.total_matching)} ${signalLabel(result.signal).toLowerCase()} runs${result.truncated ? " · selected run is always included" : ""}`;
   $("matrix-subtitle").textContent = result.matrix_mode === "normalized"
     ? "Rows are executions across multiple cohorts. Columns are normalized ordinal positions; filter to one procedure and type for semantic step labels."
-    : "Rows are comparable executions. Columns are semantic trace steps from the dominant cohort path.";
+    : "Rows are comparable executions. Columns combine valid sequence families; each run is evaluated only against its own family.";
 }
 
 function prepareCanvas(canvas, width, height, ratio) {
@@ -417,18 +422,12 @@ function prepareCanvas(canvas, width, height, ratio) {
   return ctx;
 }
 
-function drawMatrixHeader(ctx, steps, width) {
-  const { headerHeight, labelWidth, cellWidth } = state.matrix;
-  const extraWide = state.matrix.rowHeight >= 42;
-  const wide = state.matrix.rowHeight >= 38;
-  ctx.fillStyle = COLORS.soft; ctx.fillRect(0,0,width,headerHeight);
-  ctx.strokeStyle = COLORS.line; ctx.beginPath(); ctx.moveTo(0,headerHeight-.5);ctx.lineTo(width,headerHeight-.5);ctx.stroke();
-  ctx.fillStyle = COLORS.ink; ctx.font = `700 ${extraWide ? 14 : wide ? 13 : 12}px Aptos, Segoe UI`; ctx.fillText("EXECUTION / SCORE", 16, headerHeight - 14);
-  steps.forEach((step,index) => {
-    const x = labelWidth + index * cellWidth + cellWidth/2;
-    ctx.save(); ctx.translate(x, headerHeight - 11); ctx.rotate(-Math.PI/3.1); ctx.fillStyle = COLORS.muted; ctx.font = `${extraWide ? 12 : wide ? 11 : 10}px Cascadia Mono, Consolas`; ctx.fillText(truncate(step.label,30),0,0); ctx.restore();
-    ctx.strokeStyle = "#edf0f4"; ctx.beginPath();ctx.moveTo(labelWidth+index*cellWidth+.5,0);ctx.lineTo(labelWidth+index*cellWidth+.5,headerHeight);ctx.stroke();
-  });
+function renderMatrixHeader(steps, width, height, labelWidth, cellWidth) {
+  const header = $("matrix-header");
+  header.style.width = `${width}px`;
+  header.style.height = `${height}px`;
+  header.style.gridTemplateColumns = `${labelWidth}px repeat(${steps.length}, ${cellWidth}px)`;
+  header.innerHTML = `<div class="matrix-header-label">Execution / score</div>${steps.map((step) => `<div class="matrix-step-label" title="${escapeHtml(step.label)}"><span>${escapeHtml(step.label)}</span></div>`).join("")}`;
 }
 
 function drawMatrixRow(ctx, run, rowIndex, steps, width) {
@@ -451,7 +450,7 @@ function drawMatrixRow(ctx, run, rowIndex, steps, width) {
   }
 }
 
-function updateMatrixMetrics(stepCount, availableWidth) {
+function updateMatrixMetrics(stepCount, availableWidth, matrixMode) {
   let rowHeight, headerHeight, labelWidth, minimumCellWidth, maximumCellWidth;
   if (innerHeight <= 800 && innerWidth >= 1321) {
     rowHeight = 34; headerHeight = 92; labelWidth = 260; minimumCellWidth = 26; maximumCellWidth = 56;
@@ -465,6 +464,11 @@ function updateMatrixMetrics(stepCount, availableWidth) {
     rowHeight = 36; headerHeight = 106; labelWidth = 280; minimumCellWidth = 27; maximumCellWidth = 64;
   } else {
     rowHeight = 34; headerHeight = 100; labelWidth = 260; minimumCellWidth = 25; maximumCellWidth = 54;
+  }
+  if (matrixMode === "semantic") {
+    headerHeight = innerHeight <= 800 ? 66 : 72;
+    minimumCellWidth = innerWidth >= 1700 ? 160 : 140;
+    maximumCellWidth = innerWidth >= 2200 ? 220 : 190;
   }
   const usableWidth = Math.max(0, availableWidth - labelWidth - 10);
   const fittedCellWidth = stepCount ? Math.floor(usableWidth / stepCount) : minimumCellWidth;

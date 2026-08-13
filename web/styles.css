@@ -146,8 +146,14 @@ h2 { color: var(--ink); font-size: 15px; line-height: 1.2; }
 .matrix-legend .normal { border-radius: 50%; background: var(--normal); }.matrix-legend .slow { border-radius: 50%; background: var(--slow); }
 .matrix-legend .missing { border: 1px dashed var(--error); }.matrix-legend .unexpected { background: var(--unexpected); transform: rotate(45deg); }.matrix-legend .repeated { border: 2px solid var(--repeat); border-radius: 50%; }
 .matrix-scroll { min-width: 0; min-height: 0; overflow: auto; background: var(--surface); }
-#matrix-header-canvas { position: sticky; top: 0; z-index: 4; display: block; background: var(--surface-soft); box-shadow: 0 1px 0 var(--line-strong); }
-#matrix-canvas { display: block; }
+.matrix-header { position: sticky; top: 0; z-index: 6; display: grid; background: var(--surface-soft); box-shadow: 0 1px 0 var(--line-strong); }
+.matrix-header-label, .matrix-step-label { min-width: 0; display: flex; align-items: flex-end; padding: 0 8px 12px; border-right: 1px solid #edf0f4; color: var(--muted); font: 10px/1.25 var(--mono); }
+.matrix-header-label { position: sticky; left: 0; z-index: 7; padding-left: 16px; background: var(--surface-soft); color: var(--ink); font-family: var(--sans); font-size: 12px; font-weight: 700; text-transform: uppercase; box-shadow: 1px 0 0 var(--line-strong); }
+.matrix-step-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.matrix-step-label:hover { background: var(--accent-soft); color: var(--ink); }
+.matrix-body { position: relative; display: grid; }
+#matrix-canvas, #matrix-labels-canvas { grid-area: 1 / 1; display: block; }
+#matrix-labels-canvas { position: sticky; left: 0; z-index: 5; background: var(--surface); box-shadow: 1px 0 0 var(--line-strong); pointer-events: none; }
 .matrix-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 .matrix-tooltip { position: fixed; z-index: 50; max-width: 340px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 5px; background: rgba(20,33,61,.96); color: white; box-shadow: var(--shadow); pointer-events: none; font-size: 12px; line-height: 1.45; }
 

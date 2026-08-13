@@ -152,12 +152,15 @@ def _build_cohorts(runs: list[Record], events_by_run: dict[str, list[Record]]) -
     cohorts: dict[tuple[str, str], Record] = {}
     for key, cohort_runs in grouped.items():
         variants: Counter[tuple[str, ...]] = Counter()
+        complete_variants: Counter[tuple[str, ...]] = Counter()
         labels: defaultdict[str, Counter[str]] = defaultdict(Counter)
         gaps: defaultdict[str, list[float]] = defaultdict(list)
         for run in cohort_runs:
             events = events_by_run.get(run["run_id"], [])
             sequence = tuple(_step_key(event) for event in events)
             variants[sequence] += 1
+            if run.get("status") == "complete" and sequence:
+                complete_variants[sequence] += 1
             previous_time = None
             for event in events:
                 step_key = _step_key(event)
@@ -167,10 +170,12 @@ def _build_cohorts(runs: list[Record], events_by_run: dict[str, list[Record]]) -
                     gaps[step_key].append(max(0.0, (current_time - previous_time).total_seconds() * 1000))
                 previous_time = current_time or previous_time
 
-        expected = variants.most_common(1)[0][0] if variants else ()
+        baseline_variants = complete_variants or variants
+        expected = baseline_variants.most_common(1)[0][0] if baseline_variants else ()
         cohorts[key] = {
             "run_count": len(cohort_runs),
             "variants": variants,
+            "complete_variants": complete_variants,
             "expected": list(expected),
             "labels": {step: counts.most_common(1)[0][0] for step, counts in labels.items()},
             "gaps": {step: sorted(values) for step, values in gaps.items()},
@@ -179,8 +184,8 @@ def _build_cohorts(runs: list[Record], events_by_run: dict[str, list[Record]]) -
 
 
 def _analyse_run(run: Record, events: list[Record], cohort: Record) -> Record:
-    expected = cohort["expected"]
     actual = [_step_key(event) for event in events]
+    expected = _sequence_family(actual, cohort)
     expected_set = set(expected)
     actual_set = set(actual)
     missing = [step for step in expected if step not in actual_set]
@@ -245,6 +250,7 @@ def _analyse_run(run: Record, events: list[Record], cohort: Record) -> Record:
             "events": events,
             "actual": actual,
             "expected": expected,
+            "sequence_family": expected,
             "missing": missing,
             "unexpected": unexpected,
             "slow": slow,
@@ -258,6 +264,41 @@ def _analyse_run(run: Record, events: list[Record], cohort: Record) -> Record:
         }
     )
     return result
+
+
+def _sequence_family(actual: list[str], cohort: Record) -> list[str]:
+    """Choose the valid complete path that should explain this execution.
+
+    Every complete observed path is a legitimate family. Incomplete and error
+    runs are matched to the closest complete family so only omissions or novel
+    steps inside that family become deviations.
+    """
+    signature = tuple(actual)
+    complete_variants: Counter[tuple[str, ...]] = cohort.get("complete_variants", Counter())
+    if signature in complete_variants:
+        return list(signature)
+
+    candidates = list(complete_variants)
+    if not candidates:
+        return list(cohort.get("expected") or actual)
+
+    actual_set = set(actual)
+
+    def family_rank(candidate: tuple[str, ...]) -> tuple[int, int, int, int, int]:
+        candidate_set = set(candidate)
+        shared = len(actual_set & candidate_set)
+        novel = len(actual_set - candidate_set)
+        missing = len(candidate_set - actual_set)
+        ordered_shared = [step for step in actual if step in candidate_set]
+        candidate_positions = {step: index for index, step in enumerate(candidate)}
+        inversions = sum(
+            candidate_positions[ordered_shared[index]] < candidate_positions[ordered_shared[index - 1]]
+            for index in range(1, len(ordered_shared))
+        )
+        frequency = complete_variants[candidate]
+        return (shared, -novel, -missing, -inversions, frequency)
+
+    return list(max(candidates, key=family_rank))
 
 
 def _explanations(status: str, missing: list[str], unexpected: list[str], slow: list[Record], repeated: list[str], reordered: bool, variant_rate: float, cohort: Record) -> list[Record]:
@@ -324,7 +365,10 @@ def _matrix_run(item: Record, steps: list[Record]) -> Record:
         "status": item["status"],
         "event_count": item["event_count"],
         "deviation_score": item["deviation_score"],
-        "primary_reason": item["explanations"][0]["text"] if item["explanations"] else "Matches the dominant cohort pattern.",
+        "sequence_family": item["sequence_family"],
+        "missing": item["missing"],
+        "unexpected": item["unexpected"],
+        "primary_reason": item["explanations"][0]["text"] if item["explanations"] else "Matches its sequence family.",
         "cells": cells,
     }
 
@@ -354,6 +398,9 @@ def _run_detail(item: Record, cohort: Record) -> Record:
         **{key: item.get(key) for key in ("run_id", "name", "type", "start_time", "end_time", "duration_ms", "status", "event_count", "error_count", "deviation_score")},
         "cohort_runs": cohort["run_count"],
         "variant_rate": round(item["variant_rate"], 6),
+        "sequence_family": item["sequence_family"],
+        "missing": item["missing"],
+        "unexpected": item["unexpected"],
         "explanations": item["explanations"],
         "waterfall": waterfall,
         "events": item["events"],

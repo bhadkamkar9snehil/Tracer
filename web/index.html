@@ -55,14 +55,17 @@
 
         <section class="matrix-section" aria-labelledby="matrix-heading">
           <header class="section-header">
-            <div><h2 id="matrix-heading">Run × step deviation matrix</h2><p id="matrix-subtitle">Rows are reconstructed executions. Columns are normalized trace steps.</p></div>
+            <div><h2 id="matrix-heading">Run × step deviation matrix</h2><p id="matrix-subtitle">Rows are reconstructed executions. Columns represent valid sequence families.</p></div>
             <div class="matrix-legend" aria-label="Matrix legend">
               <span><i class="normal"></i>Normal</span><span><i class="slow"></i>Slow</span><span><i class="missing"></i>Missing</span><span><i class="unexpected"></i>Unexpected</span><span><i class="repeated"></i>Repeated</span>
             </div>
           </header>
           <div id="matrix-scroll" class="matrix-scroll">
-            <canvas id="matrix-header-canvas" aria-hidden="true"></canvas>
-            <canvas id="matrix-canvas" tabindex="0" role="img" aria-describedby="matrix-subtitle matrix-selection"></canvas>
+            <div id="matrix-header" class="matrix-header" role="row"></div>
+            <div id="matrix-body" class="matrix-body">
+              <canvas id="matrix-canvas" tabindex="0" role="img" aria-describedby="matrix-subtitle matrix-selection"></canvas>
+              <canvas id="matrix-labels-canvas" aria-hidden="true"></canvas>
+            </div>
           </div>
           <footer class="matrix-footer"><span id="matrix-result">Loading executions…</span><span>Click a row for its evidence</span></footer>
           <div id="matrix-selection" class="sr-only" aria-live="polite"></div>

@@ -21,7 +21,7 @@ The application is intentionally cache-first. It remains usable when SQL Server 
 
 ## Deviation model
 
-Runs are compared only with runs sharing the same procedure and trace type. Tracer explains:
+Runs are first classified into complete sequence families within the same procedure and trace type. Complete paths are treated as legitimate families rather than anomalies; incomplete and error runs are compared with their closest complete family. Tracer explains:
 
 - error, incomplete, orphan, and unknown outcomes;
 - missing expected steps;
@@ -31,7 +31,7 @@ Runs are compared only with runs sharing the same procedure and trace type. Trac
 - step latency beyond the cohort p95;
 - rare execution sequences.
 
-The dominant observed sequence becomes the cohort baseline. The UI does not treat an opaque model score as evidence: every non-zero score is accompanied by the concrete conditions that produced it.
+Each complete observed sequence can become a family baseline. This prevents valid stored-procedure branches from being mislabeled as wholly missing and unexpected merely because another branch is more frequent. The UI does not treat an opaque model score as evidence: every non-zero score is accompanied by the concrete conditions that produced it.
 
 ## Requirements
 

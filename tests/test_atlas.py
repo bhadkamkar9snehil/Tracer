@@ -29,7 +29,14 @@ class AtlasTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.conn.close()
 
-    def _add_run(self, run_id: str, started: datetime, steps: list[tuple[int, str, int]], status: str = "complete") -> None:
+    def _add_run(
+        self,
+        run_id: str,
+        started: datetime,
+        steps: list[tuple[int, str, int]],
+        status: str = "complete",
+        sr_no: int = 1,
+    ) -> None:
         event_ids = []
         for sequence, label, offset_ms in steps:
             event_id = f"{run_id}-{sequence}"
@@ -38,8 +45,8 @@ class AtlasTests(unittest.TestCase):
             self.conn.execute(
                 """INSERT INTO trace_events
                    (id, report_date, entry_datetime, name, type, step, sr_no, sub_seq_no, execution_query, details)
-                   VALUES (?, ?, ?, 'Procedure_A', 'Production', ?, 1, ?, '', '{}')""",
-                (event_id, started.date().isoformat(), event_time.isoformat(), label, sequence),
+                   VALUES (?, ?, ?, 'Procedure_A', 'Production', ?, ?, ?, '', '{}')""",
+                (event_id, started.date().isoformat(), event_time.isoformat(), label, sr_no, sequence),
             )
         duration = steps[-1][2] if steps else 0
         self.conn.execute(
@@ -62,6 +69,48 @@ class AtlasTests(unittest.TestCase):
             [(run_id, event_id) for event_id in event_ids],
         )
         self.conn.commit()
+
+    def test_complete_sequence_family_is_not_compared_to_another_family(self) -> None:
+        base = datetime(2026, 1, 3, tzinfo=timezone.utc)
+        for index in range(4):
+            self._add_run(
+                f"branch-six-{index}",
+                base + timedelta(minutes=index),
+                [(1, "Entered", 0), (2, "Branch six work", 10), (3, "Completed", 20)],
+                sr_no=6,
+            )
+
+        payload = atlas.atlas_payload(self.conn, {"signal": "all", "limit": "50"})
+        branch = next(run for run in payload["runs"] if run["run_id"] == "branch-six-0")
+
+        self.assertEqual(branch["deviation_score"], 0)
+        self.assertEqual(branch["missing"], [])
+        self.assertEqual(branch["unexpected"], [])
+        self.assertEqual(branch["sequence_family"], ["6:1", "6:2", "6:3"])
+
+    def test_incomplete_run_uses_the_closest_complete_sequence_family(self) -> None:
+        base = datetime(2026, 1, 4, tzinfo=timezone.utc)
+        for index in range(3):
+            self._add_run(
+                f"branch-six-complete-{index}",
+                base + timedelta(minutes=index),
+                [(1, "Entered", 0), (2, "Branch six work", 10), (3, "Completed", 20)],
+                sr_no=6,
+            )
+        self._add_run(
+            "branch-six-incomplete",
+            base + timedelta(minutes=10),
+            [(1, "Entered", 0), (2, "Branch six work", 10)],
+            status="incomplete",
+            sr_no=6,
+        )
+
+        payload = atlas.atlas_payload(self.conn, {"signal": "all", "limit": "50"})
+        branch = next(run for run in payload["runs"] if run["run_id"] == "branch-six-incomplete")
+
+        self.assertEqual(branch["sequence_family"], ["6:1", "6:2", "6:3"])
+        self.assertEqual(branch["missing"], ["6:3"])
+        self.assertEqual(branch["unexpected"], [])
 
     def test_atlas_identifies_explainable_deviation(self) -> None:
         payload = atlas.atlas_payload(self.conn, {"limit": "50"})
