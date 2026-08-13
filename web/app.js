@@ -408,8 +408,8 @@ function renderInbox() {
   $("inbox-subtitle").textContent = `${signalLabel(signal)} runs · ${$("filter-sort").selectedOptions[0]?.textContent || "current order"}`;
   $("anomaly-list").innerHTML = items.length ? items.map((item) => `
     <button class="anomaly-item ${item.run_id === state.selectedRunId ? "active" : ""}" type="button" role="listitem" data-run="${item.run_id}">
-      <i class="severity-icon ${item.severity}" aria-label="${item.severity} severity"></i>
-      <span class="anomaly-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(shortProcedure(item.name))} · ${escapeHtml(item.type || "Unknown")}</strong><p>${escapeHtml(item.reason)}</p><time>${escapeHtml(formatDate(item.start_time))}</time></span>
+      <i class="signal-icon ${escapeHtml(item.signals[0]?.kind || "normal")}" aria-hidden="true"></i>
+      <span class="anomaly-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(shortProcedure(item.name))} · ${escapeHtml(item.type || "Unknown")}</strong><span class="signal-tags">${item.signals.map((signal) => `<span class="signal-tag ${escapeHtml(signal.kind)}">${escapeHtml(signal.label)}</span>`).join("")}</span><time>${escapeHtml(formatDate(item.start_time))}</time></span>
       <span class="anomaly-score ${item.severity}">${item.deviation_score}</span>
     </button>`).join("") : `<div class="empty-list">No ${signalLabel(signal).toLowerCase()} runs match the current filters.</div>`;
   document.querySelectorAll(".anomaly-item").forEach((button) => button.addEventListener("click", () => selectRun(button.dataset.run)));

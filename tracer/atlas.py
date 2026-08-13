@@ -409,6 +409,28 @@ def _run_detail(item: Record, cohort: Record) -> Record:
 
 def _inbox_item(item: Record) -> Record:
     score = item["deviation_score"]
+    signals: list[Record] = []
+    status = str(item.get("status") or "unknown")
+    if status == "error":
+        signals.append({"kind": "error", "label": "Error"})
+    elif status in {"incomplete", "orphan"}:
+        signals.append({"kind": "boundary", "label": "Boundary"})
+    elif status == "unknown":
+        signals.append({"kind": "boundary", "label": "Unknown"})
+    if item["missing"]:
+        signals.append({"kind": "missing", "label": f"Missing {len(item['missing'])}"})
+    if item["unexpected"]:
+        signals.append({"kind": "unexpected", "label": f"Unexpected {len(item['unexpected'])}"})
+    if item["slow"]:
+        signals.append({"kind": "slow", "label": f"Slow {len(item['slow'])}"})
+    if item["reordered"]:
+        signals.append({"kind": "pattern", "label": "Reordered"})
+    if item["repeated"]:
+        signals.append({"kind": "pattern", "label": f"Repeated {len(item['repeated'])}"})
+    if any(explanation["kind"] == "rare" for explanation in item["explanations"]):
+        signals.append({"kind": "pattern", "label": "Rare path"})
+    if not signals:
+        signals.append({"kind": "normal", "label": "Normal"})
     return {
         "run_id": item["run_id"],
         "name": item["name"],
@@ -416,7 +438,7 @@ def _inbox_item(item: Record) -> Record:
         "start_time": item["start_time"],
         "status": item["status"],
         "deviation_score": score,
-        "reason": item["explanations"][0]["text"] if item["explanations"] else "No explainable deviation detected.",
+        "signals": signals,
         "severity": "high" if score >= 40 else "medium" if score >= 18 else "low" if score > 0 else "normal",
     }
 

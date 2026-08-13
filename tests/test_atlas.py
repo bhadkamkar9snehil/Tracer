@@ -122,6 +122,8 @@ class AtlasTests(unittest.TestCase):
         self.assertEqual(payload["result"]["signal"], "deviated")
         self.assertEqual(payload["result"]["total_matching"], 1)
         self.assertEqual(payload["inbox"][0]["run_id"], "problem-run")
+        self.assertNotIn("reason", payload["inbox"][0])
+        self.assertEqual(payload["inbox"][0]["signals"][0]["label"], "Error")
 
     def test_kpi_signal_filters_the_coordinated_run_scope(self) -> None:
         all_runs = atlas.atlas_payload(self.conn, {"signal": "all", "limit": "50"})
