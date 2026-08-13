@@ -38,9 +38,9 @@ button { color: inherit; }
 .app-bar {
   height: 74px;
   display: grid;
-  grid-template-columns: 180px minmax(190px, .55fr) minmax(940px, 2.8fr) auto;
+  grid-template-columns: 132px minmax(240px, .62fr) minmax(940px, 2.8fr) auto;
   align-items: stretch;
-  gap: 16px;
+  column-gap: 12px;
   padding: 9px 18px;
   border-bottom: 1px solid var(--line);
   background: rgba(255,255,255,.97);
