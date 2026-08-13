@@ -57,7 +57,7 @@ button { color: inherit; }
 .freshness strong { font-size: 13px; color: var(--text); }
 .freshness span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--slow); box-shadow: 0 0 0 3px var(--slow-soft); }
-.freshness[data-state="fresh"] .status-dot { background: var(--normal); box-shadow: 0 0 0 3px var(--normal-soft); }
+.freshness[data-state="online"] .status-dot { background: var(--normal); box-shadow: 0 0 0 3px var(--normal-soft); }
 .freshness[data-state="offline"] .status-dot, .freshness[data-state="empty"] .status-dot { background: var(--error); box-shadow: 0 0 0 3px var(--error-soft); }
 
 .filter-bar { display: grid; grid-template-columns: minmax(230px,1.5fr) minmax(145px,.9fr) minmax(290px,1.3fr) minmax(110px,.65fr) minmax(145px,.8fr); gap: 9px; align-items: end; }

@@ -18,6 +18,7 @@ const state = {
   filterOptionsLoaded: false,
   filterOptions: null,
   requestSerial: 0,
+  connection: { status: "checking", database: "", error: "" },
   layout: { left: null, right: null, bottom: null, split: null },
   matrix: { rowHeight: 29, headerHeight: 90, labelWidth: 232, cellWidth: 24 },
 };
@@ -37,7 +38,22 @@ async function init() {
   restoreLayout();
   bindActions();
   bindPanelResizers();
-  await loadAtlas();
+  await Promise.all([loadConnectionStatus(), loadAtlas()]);
+}
+
+async function loadConnectionStatus() {
+  try {
+    const response = await fetch("/api/health?probe=sql");
+    const payload = await response.json();
+    state.connection = {
+      status: payload.sql_ok ? "online" : "offline",
+      database: payload.database || "",
+      error: payload.sql_error || "",
+    };
+  } catch (error) {
+    state.connection = { status: "offline", database: "", error: error.message };
+  }
+  if (state.atlas) renderFreshness();
 }
 
 function bindActions() {
@@ -341,9 +357,17 @@ function procedureOption(item) {
 function renderFreshness() {
   const freshness = state.atlas.freshness;
   const el = $("freshness");
-  el.dataset.state = freshness.state;
   const age = freshness.age_seconds == null ? "No cached events" : `${formatAge(freshness.age_seconds)} old`;
-  el.innerHTML = `<span class="status-dot"></span><strong>${titleCase(freshness.state)} cache</strong><span>${escapeHtml(formatDate(freshness.watermark))} · ${age}</span>`;
+  const through = freshness.watermark ? `data through ${formatDate(freshness.watermark)} · ${age}` : age;
+  const connection = state.connection;
+  el.dataset.state = connection.status;
+  if (connection.status === "online") {
+    el.innerHTML = `<span class="status-dot"></span><strong>Online</strong><span>${escapeHtml(connection.database || "SQL connected")} · ${escapeHtml(through)}</span>`;
+  } else if (connection.status === "offline") {
+    el.innerHTML = `<span class="status-dot"></span><strong>Offline cache</strong><span>Database unavailable · ${escapeHtml(through)}</span>`;
+  } else {
+    el.innerHTML = `<span class="status-dot"></span><strong>Checking</strong><span>${escapeHtml(through)}</span>`;
+  }
 }
 
 function renderSummary() {
@@ -634,8 +658,8 @@ function activateInspectorTab(tab) {
 
 async function syncData() {
   const button=$("sync-data");button.disabled=true;button.textContent="Syncing…";
-  try { const response=await fetch("/api/sync?limit=5000&mode=incremental",{method:"POST"});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(payload.error||"SQL sync failed");showToast(`Synced ${formatNumber(payload.inserted)} trace rows.`);await loadAtlas(); }
-  catch(error){showToast(`${error.message}. Cached analysis remains available.`,true);} finally{button.disabled=false;button.textContent="Sync";}
+  try { const response=await fetch("/api/sync?limit=5000&mode=incremental",{method:"POST"});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(payload.error||"SQL sync failed");state.connection.status="online";showToast(payload.inserted ? `Synced ${formatNumber(payload.inserted)} trace rows.` : "SQL connected. Source data is unchanged.");await loadAtlas(); }
+  catch(error){state.connection.status="offline";renderFreshness();showToast(`${error.message}. Cached analysis remains available.`,true);} finally{button.disabled=false;button.textContent="Sync";}
 }
 
 function exportVisible() {

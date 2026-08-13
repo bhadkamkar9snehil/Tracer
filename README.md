@@ -4,6 +4,8 @@ Tracer is a local execution-analysis application for high-volume XStudio/XMES tr
 
 The application is intentionally cache-first. It remains usable when SQL Server is unavailable and always displays the age of the cached evidence.
 
+The header reports **Online** whenever the configured SQL source is reachable, even though analysis is staged through SQLite. **Offline cache** is reserved for the fallback state where SQL Server is unavailable and Tracer is serving previously synchronized local evidence.
+
 ## What it provides
 
 - Run-by-step deviation matrix for hundreds of executions at once.
